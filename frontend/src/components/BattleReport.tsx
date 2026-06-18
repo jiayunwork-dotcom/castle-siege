@@ -1,4 +1,4 @@
-import { createSignal, createMemo, onMount, For, Show } from 'solid-js';
+import { createSignal, createMemo, onMount, createEffect, For, Show } from 'solid-js';
 import { gameWS } from '../services/websocket';
 import type {
   BattleReport,
@@ -147,9 +147,25 @@ function BattleReportScreen(props: BattleReportProps) {
     }
   }
 
-  onMount(() => {
-    drawTimelineChart();
-    drawThumbnail();
+  createEffect(() => {
+    const snaps = turnSnapshots();
+    const hover = hoverTurn();
+    const canvas = canvasRef();
+    if (!canvas || snaps.length === 0) return;
+
+    requestAnimationFrame(() => {
+      drawTimelineChart();
+    });
+  });
+
+  createEffect(() => {
+    const snap = currentSnapshot();
+    const canvas = thumbnailRef();
+    if (!canvas || !snap) return;
+
+    requestAnimationFrame(() => {
+      drawThumbnail();
+    });
   });
 
   function drawTimelineChart() {
@@ -412,13 +428,6 @@ function BattleReportScreen(props: BattleReportProps) {
     }
   }
 
-  const timelineRequestFrame = () => {
-    requestAnimationFrame(() => {
-      drawTimelineChart();
-      drawThumbnail();
-    });
-  };
-
   function renderPieChart(data: UnitTypeKillStats[], factionColor: string): string {
     if (data.length === 0) return '';
     const total = data.reduce((sum, d) => sum + d.kills, 0);
@@ -567,9 +576,9 @@ function BattleReportScreen(props: BattleReportProps) {
           <div class="timeline-chart-wrapper" style={{ position: 'relative' }}>
             <canvas
               ref={setCanvasRef}
-              onMouseMove={(e) => { handleTimelineHover(e); timelineRequestFrame(); }}
-              onMouseLeave={() => { handleTimelineLeave(); timelineRequestFrame(); }}
-              onClick={(e) => { handleTimelineClick(e); timelineRequestFrame(); }}
+              onMouseMove={(e) => { handleTimelineHover(e); }}
+              onMouseLeave={() => { handleTimelineLeave(); }}
+              onClick={(e) => { handleTimelineClick(e); }}
               style={{ width: '100%', height: '280px', cursor: 'pointer' }}
             />
             <Show when={tooltipData() && hoverTurn() !== null && turnSnapshots()[hoverTurn()!]}>
