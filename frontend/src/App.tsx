@@ -3,9 +3,10 @@ import { gameWS } from './services/websocket';
 import LobbyScreen from './components/LobbyScreen';
 import RoomScreen from './components/RoomScreen';
 import GameScreen from './components/GameScreen';
+import BattleReportScreen from './components/BattleReport';
 import type { GameState, Room } from './types/game';
 
-type Screen = 'lobby' | 'room' | 'game';
+type Screen = 'lobby' | 'room' | 'game' | 'battleReport';
 
 function App() {
   const [currentScreen, setCurrentScreen] = createSignal<Screen>('lobby');
@@ -24,7 +25,7 @@ function App() {
     const room = gameWS.room;
     const gameState = gameWS.gameState;
 
-    if (gameState && currentScreen() !== 'game') {
+    if (gameState && currentScreen() !== 'game' && currentScreen() !== 'battleReport') {
       setCurrentScreen('game');
     } else if (room && !gameState && currentScreen() !== 'room') {
       setCurrentScreen('room');
@@ -35,7 +36,12 @@ function App() {
     gameWS.setRoom(null);
     gameWS.setGameState(null);
     gameWS.setPlayer(null);
+    gameWS.setBattleReport(null);
     setCurrentScreen('lobby');
+  };
+
+  const goToBattleReport = () => {
+    setCurrentScreen('battleReport');
   };
 
   return (
@@ -53,7 +59,11 @@ function App() {
       )}
 
       {currentScreen() === 'game' && (
-        <GameScreen onBack={goToLobby} />
+        <GameScreen onBack={goToLobby} onViewReport={goToBattleReport} />
+      )}
+
+      {currentScreen() === 'battleReport' && (
+        <BattleReportScreen onBack={goToLobby} />
       )}
 
       {!isConnected() && (

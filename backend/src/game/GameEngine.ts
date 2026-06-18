@@ -1,14 +1,27 @@
-import { GameState, Position, MoveAction, AttackAction, BuildAction, RepairAction } from '../types/game';
+import { GameState, Position, MoveAction, AttackAction, BuildAction, RepairAction, BattleReport, Player } from '../types/game';
 import { createInitialGameState } from './gameInitializer';
-import { canMoveUnit, canAttackUnit, useSiegeEngine, checkGameEnd } from './combatSystem';
+import { canMoveUnit, canAttackUnit, useSiegeEngine, checkGameEnd, setCombatCallback } from './combatSystem';
 import { advanceTurn, processSupplyPhase } from './turnSystem';
 import { buildDefense, repairStructure, upgradeGate, buildSiegeEngine, trainUnit } from './buildingSystem';
+import { SnapshotSystem } from './snapshotSystem';
 
 export class GameEngine {
   private state: GameState;
+  private snapshotSystem: SnapshotSystem;
+  private players: Player[] = [];
 
   constructor(roomId: string) {
     this.state = createInitialGameState(roomId);
+    this.snapshotSystem = new SnapshotSystem();
+
+    setCombatCallback({
+      onCombat: (attackerOwnerId, targetOwnerId, targetFaction, targetType, targetUnitType, targetId, damage, killed) => {
+        this.snapshotSystem.recordCombat(attackerOwnerId, targetOwnerId, targetFaction, targetType, targetUnitType, targetId, damage, killed);
+      },
+      onDefenseDestroyed: (defenseType, position, attackerOwnerId) => {
+        this.snapshotSystem.recordDefenseDestroyed(defenseType, position, this.state.turn, attackerOwnerId, this.players);
+      },
+    });
   }
 
   getState(): GameState {
@@ -18,6 +31,11 @@ export class GameEngine {
   getPublicState(playerFaction?: string): GameState {
     const state = { ...this.state };
     return state;
+  }
+
+  getBattleReport(): BattleReport | null {
+    if (this.state.phase !== 'ended') return null;
+    return this.snapshotSystem.generateBattleReport(this.state);
   }
 
   moveUnit(unitId: string, targetPosition: Position, playerFaction: string): { success: boolean; message?: string } {
@@ -89,7 +107,16 @@ export class GameEngine {
     if (this.state.subPhase === 'supply') {
       processSupplyPhase(this.state);
     }
+
+    const wasEndOfTurn = this.state.subPhase === 'supply';
+
     advanceTurn(this.state);
+
+    if (wasEndOfTurn) {
+      this.snapshotSystem.captureSnapshot(this.state);
+      this.snapshotSystem.recordResourceBefore(this.state);
+    }
+
     return this.state;
   }
 
@@ -98,6 +125,18 @@ export class GameEngine {
     this.state.turn = 1;
     this.state.subPhase = 'movement';
     this.state.currentFaction = 'defender';
+
+    this.snapshotSystem.recordResourceBefore(this.state);
+
     return this.state;
+  }
+
+  setPlayers(players: Player[]): void {
+    this.players = players;
+    this.snapshotSystem.initPlayers(players.map(p => ({
+      id: p.id,
+      name: p.name,
+      faction: p.faction,
+    })));
   }
 }

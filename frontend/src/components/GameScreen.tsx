@@ -10,6 +10,7 @@ import type { Unit, SiegeEngine, DefenseStructure, Position, UnitType, Resources
 
 interface GameScreenProps {
   onBack: () => void;
+  onViewReport: () => void;
 }
 
 const UNIT_COSTS: Record<UnitType, Resources> = {
@@ -428,9 +429,24 @@ function GameScreen(props: GameScreenProps) {
             <p style={{ 'font-size': '1.2rem', color: '#a0a0c0', 'margin-bottom': '30px' }}>
               {gameState()?.winner === 'attacker' ? '攻方攻破了城堡！' : '守方成功保卫了城堡！'}
             </p>
-            <button onClick={props.onBack} style={{ padding: '14px 40px', 'font-size': '18px' }}>
-              返回大厅
-            </button>
+            <div style={{ display: 'flex', gap: '16px', 'justify-content': 'center' }}>
+              <button
+                onClick={() => {
+                  gameWS.requestBattleReport();
+                  props.onViewReport();
+                }}
+                style={{
+                  padding: '14px 40px',
+                  'font-size': '18px',
+                  background: 'linear-gradient(135deg, #4ecdc4, #26a69a)',
+                }}
+              >
+                查看战报
+              </button>
+              <button onClick={props.onBack} style={{ padding: '14px 40px', 'font-size': '18px' }}>
+                返回大厅
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -1,8 +1,9 @@
 import { getRedisClient } from './client';
-import { GameState, Room, Player } from '../types/game';
+import { GameState, Room, Player, BattleReport } from '../types/game';
 
 const ROOM_PREFIX = 'room:';
 const GAME_STATE_PREFIX = 'gamestate:';
+const BATTLE_REPORT_PREFIX = 'battlereport:';
 const ROOM_LIST_KEY = 'rooms:list';
 
 export async function saveRoom(room: Room): Promise<void> {
@@ -63,4 +64,18 @@ export async function deleteGameState(roomId: string): Promise<void> {
   const redis = getRedisClient();
   const key = GAME_STATE_PREFIX + roomId;
   await redis.del(key);
+}
+
+export async function saveBattleReport(roomId: string, report: BattleReport): Promise<void> {
+  const redis = getRedisClient();
+  const key = BATTLE_REPORT_PREFIX + roomId;
+  await redis.set(key, JSON.stringify(report), 'EX', 86400);
+}
+
+export async function getBattleReportFromStore(roomId: string): Promise<BattleReport | null> {
+  const redis = getRedisClient();
+  const key = BATTLE_REPORT_PREFIX + roomId;
+  const data = await redis.get(key);
+  if (!data) return null;
+  return JSON.parse(data);
 }

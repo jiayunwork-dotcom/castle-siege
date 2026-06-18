@@ -1,6 +1,6 @@
-import { Room, Player, Faction, GameState } from '../types/game';
+import { Room, Player, Faction, GameState, BattleReport } from '../types/game';
 import { generateId } from '../utils/helpers';
-import { saveRoom, getRoom, deleteRoom, listRooms, saveGameState, getGameState } from '../redis/gameStore';
+import { saveRoom, getRoom, deleteRoom, listRooms, saveGameState, getGameState, saveBattleReport, getBattleReportFromStore } from '../redis/gameStore';
 import { GameEngine } from '../game/GameEngine';
 
 interface ActiveRoom {
@@ -158,6 +158,7 @@ export function startGame(roomId: string, hostPlayerId: string): { gameState: Ga
   }
 
   const gameEngine = new GameEngine(roomId);
+  gameEngine.setPlayers(activeRoom.room.players);
   const gameState = gameEngine.startGame();
 
   activeRoom.gameEngine = gameEngine;
@@ -210,6 +211,30 @@ export function sendToPlayer(roomId: string, playerId: string, message: any): vo
   if (socket && socket.readyState === 1) {
     socket.send(JSON.stringify(message));
   }
+}
+
+export function getBattleReport(roomId: string): BattleReport | null {
+  const activeRoom = activeRooms.get(roomId);
+  if (activeRoom?.gameEngine) {
+    const report = activeRoom.gameEngine.getBattleReport();
+    if (report) {
+      saveBattleReport(roomId, report).catch(console.error);
+      return report;
+    }
+  }
+  return null;
+}
+
+export async function getBattleReportAsync(roomId: string): Promise<BattleReport | null> {
+  const activeRoom = activeRooms.get(roomId);
+  if (activeRoom?.gameEngine) {
+    const report = activeRoom.gameEngine.getBattleReport();
+    if (report) {
+      await saveBattleReport(roomId, report);
+      return report;
+    }
+  }
+  return await getBattleReportFromStore(roomId);
 }
 
 export { activeRooms };

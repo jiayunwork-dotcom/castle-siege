@@ -1,5 +1,5 @@
 import { createSignal } from 'solid-js';
-import type { GameState, Room, Player, WSMessage, ChatMessage, Faction, Position } from '../types/game';
+import type { GameState, Room, Player, WSMessage, ChatMessage, Faction, Position, BattleReport } from '../types/game';
 
 class GameWebSocket {
   private ws: WebSocket | null = null;
@@ -12,6 +12,7 @@ class GameWebSocket {
   private _isConnected = createSignal(false);
   private _chatMessages = createSignal<ChatMessage[]>([]);
   private _errorMessage = createSignal<string | null>(null);
+  private _battleReport = createSignal<BattleReport | null>(null);
 
   private listeners: Map<string, ((data: any) => void)[]> = new Map();
 
@@ -39,12 +40,17 @@ class GameWebSocket {
     return this._errorMessage[0]();
   }
 
+  get battleReport() {
+    return this._battleReport[0]();
+  }
+
   setGameState = (value: GameState | null) => this._gameState[1](value);
   setRoom = (value: Room | null) => this._room[1](value);
   setPlayer = (value: Player | null) => this._player[1](value);
   setIsConnected = (value: boolean) => this._isConnected[1](value);
   setChatMessages = (updater: any) => this._chatMessages[1](updater);
   setErrorMessage = (value: string | null) => this._errorMessage[1](value);
+  setBattleReport = (value: BattleReport | null) => this._battleReport[1](value);
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -160,6 +166,10 @@ class GameWebSocket {
         setTimeout(() => this.setErrorMessage(null), 3000);
         break;
 
+      case 'battleReport':
+        this.setBattleReport(message.payload.battleReport);
+        break;
+
       case 'error':
         this.setErrorMessage(message.payload.message);
         setTimeout(() => this.setErrorMessage(null), 3000);
@@ -250,6 +260,10 @@ class GameWebSocket {
 
   sendChat(message: string): void {
     this.send('chat', { message });
+  }
+
+  requestBattleReport(): void {
+    this.send('getBattleReport', {});
   }
 
   disconnect(): void {

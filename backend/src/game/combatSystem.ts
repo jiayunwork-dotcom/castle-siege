@@ -2,6 +2,30 @@ import { GameState, Unit, Position, DefenseStructure, SiegeEngine, Faction } fro
 import { getDistance, clamp, randomInt } from '../utils/helpers';
 import { WEATHER_MODIFIERS, TIME_OF_DAY_MODIFIERS, WALL_DEFENSE_BONUS, UNIT_COUNTERS, SIEGE_ENGINE_STATS, DEFENSE_STATS } from '../constants/gameConfig';
 
+export interface CombatEventCallback {
+  onCombat: (
+    attackerOwnerId: string,
+    targetOwnerId: string,
+    targetFaction: Faction,
+    targetType: 'unit' | 'defense' | 'siegeEngine',
+    targetUnitType: string | undefined,
+    targetId: string,
+    damage: number,
+    killed: boolean
+  ) => void;
+  onDefenseDestroyed: (
+    defenseType: string,
+    position: Position,
+    attackerOwnerId?: string
+  ) => void;
+}
+
+let combatCallback: CombatEventCallback | null = null;
+
+export function setCombatCallback(cb: CombatEventCallback | null): void {
+  combatCallback = cb;
+}
+
 export function canMoveUnit(state: GameState, unitId: string, targetPos: Position): { success: boolean; message?: string } {
   const unit = state.units.find(u => u.id === unitId);
   if (!unit) return { success: false, message: 'Unit not found' };
@@ -110,10 +134,51 @@ export function canAttackUnit(state: GameState, attackerId: string, targetId: st
 
   attacker.attacked = true;
 
+  let killed = false;
+
   if (targetType === 'unit') {
     (target as Unit).stats.hp -= damage;
+    killed = (target as Unit).stats.hp <= 0;
   } else {
     (target as any).hp -= damage;
+    killed = (target as any).hp <= 0;
+  }
+
+  if (combatCallback) {
+    const targetOwnerId = targetType === 'unit'
+      ? (target as Unit).ownerId
+      : targetType === 'siegeEngine'
+        ? (target as SiegeEngine).ownerId
+        : '';
+    const targetUnitType = targetType === 'unit'
+      ? (target as Unit).type
+      : targetType === 'siegeEngine'
+        ? (target as SiegeEngine).type
+        : (target as DefenseStructure).type;
+    const targetFaction = targetType === 'unit'
+      ? (target as Unit).faction
+      : targetType === 'siegeEngine'
+        ? (target as SiegeEngine).faction
+        : 'defender';
+
+    combatCallback.onCombat(
+      attacker.ownerId,
+      targetOwnerId,
+      targetFaction,
+      targetType,
+      targetUnitType,
+      targetId,
+      damage,
+      killed
+    );
+
+    if (targetType === 'defense' && killed) {
+      combatCallback.onDefenseDestroyed(
+        (target as DefenseStructure).type,
+        (target as DefenseStructure).position,
+        attacker.ownerId
+      );
+    }
   }
 
   return { success: true, damage };
@@ -196,10 +261,45 @@ export function useSiegeEngine(state: GameState, engineId: string, targetId: str
   engine.attacked = true;
   engine.stats.currentReload = engine.stats.reloadTime;
 
+  let killed = false;
+
   if (targetType === 'defense') {
     (target as DefenseStructure).hp -= damage;
+    killed = (target as DefenseStructure).hp <= 0;
   } else {
     (target as Unit).stats.hp -= damage;
+    killed = (target as Unit).stats.hp <= 0;
+  }
+
+  if (combatCallback) {
+    const targetOwnerId = targetType === 'unit'
+      ? (target as Unit).ownerId
+      : '';
+    const targetUnitType = targetType === 'unit'
+      ? (target as Unit).type
+      : (target as DefenseStructure).type;
+    const targetFaction = targetType === 'unit'
+      ? (target as Unit).faction
+      : 'defender';
+
+    combatCallback.onCombat(
+      engine.ownerId,
+      targetOwnerId,
+      targetFaction,
+      targetType === 'defense' ? 'defense' : 'unit',
+      targetUnitType,
+      targetId,
+      damage,
+      killed
+    );
+
+    if (targetType === 'defense' && killed) {
+      combatCallback.onDefenseDestroyed(
+        (target as DefenseStructure).type,
+        (target as DefenseStructure).position,
+        engine.ownerId
+      );
+    }
   }
 
   return { success: true, damage };

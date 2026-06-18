@@ -155,3 +155,97 @@ export interface ChatMessage {
   message: string;
   timestamp: number;
 }
+
+export interface GameEvent {
+  turn: number;
+  type: 'wallBreached' | 'gateFallen' | 'towerDestroyed' | 'reinforcementsArrived' | 'innerCityBreakthrough' | 'keepDamaged';
+  description: string;
+  playerId?: string;
+  playerName?: string;
+  position?: Position;
+}
+
+export interface TurnSnapshotUnit {
+  id: string;
+  type: UnitType;
+  faction: Faction;
+  position: Position;
+  hp: number;
+  maxHp: number;
+  ownerId: string;
+}
+
+export interface TurnSnapshotSiegeEngine {
+  id: string;
+  type: SiegeEngineType;
+  faction: Faction;
+  position: Position;
+  hp: number;
+  maxHp: number;
+}
+
+export interface TurnSnapshotDefense {
+  id: string;
+  type: DefenseType;
+  position: Position;
+  hp: number;
+  maxHp: number;
+}
+
+export interface TurnSnapshot {
+  turn: number;
+  attackerUnitCount: number;
+  defenderUnitCount: number;
+  attackerSiegeEngineCount: number;
+  defenderDefenseCount: number;
+  units: TurnSnapshotUnit[];
+  siegeEngines: TurnSnapshotSiegeEngine[];
+  defenses: TurnSnapshotDefense[];
+  resources: Record<Faction, Resources>;
+  events: GameEvent[];
+  attackerKills: number;
+  defenderKills: number;
+  attackerLosses: number;
+  defenderLosses: number;
+  resourceConsumption: Record<Faction, Resources>;
+}
+
+export interface PlayerBattleStats {
+  playerId: string;
+  playerName: string;
+  faction: Faction;
+  kills: number;
+  assists: number;
+  losses: number;
+  damageDealt: number;
+  damageTaken: number;
+  survivalTurns: number;
+}
+
+export interface UnitTypeKillStats {
+  unitType: UnitType;
+  kills: number;
+}
+
+export interface MVPData {
+  playerId: string;
+  playerName: string;
+  faction: Faction;
+  kills: number;
+  damageDealt: number;
+  survivalTurns: number;
+  score: number;
+}
+
+export interface BattleReport {
+  gameId: string;
+  winner: Faction;
+  totalTurns: number;
+  turnSnapshots: TurnSnapshot[];
+  playerStats: PlayerBattleStats[];
+  attackerKillByType: UnitTypeKillStats[];
+  defenderKillByType: UnitTypeKillStats[];
+  keyEvents: GameEvent[];
+  attackerMVP: MVPData;
+  defenderMVP: MVPData;
+}

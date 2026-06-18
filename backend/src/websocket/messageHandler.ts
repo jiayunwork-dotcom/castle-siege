@@ -11,6 +11,7 @@ import {
   removePlayerSocket,
   broadcastToRoom,
   sendToPlayer,
+  getBattleReportAsync,
 } from '../managers/roomManager';
 import { saveGameState } from '../redis/gameStore';
 
@@ -59,6 +60,8 @@ export function handleWebSocketMessage(
       return handleGetGameState(connection, message, roomId, playerId);
     case 'chat':
       return handleChat(connection, message, roomId, playerId);
+    case 'getBattleReport':
+      return handleGetBattleReport(connection, message, roomId, playerId);
     default:
       connection.send(JSON.stringify({ type: 'error', payload: { message: 'Unknown message type' } }));
       return {};
@@ -429,6 +432,28 @@ function handleChat(connection: any, message: WSMessage, roomId?: string, player
       message: message.payload.message,
       timestamp: Date.now(),
     },
+  });
+
+  return { roomId, playerId };
+}
+
+function handleGetBattleReport(connection: any, message: WSMessage, roomId?: string, playerId?: string) {
+  if (!roomId || !playerId) {
+    connection.send(JSON.stringify({ type: 'error', payload: { message: 'Not in a room' } }));
+    return {};
+  }
+
+  getBattleReportAsync(roomId).then(report => {
+    if (report) {
+      connection.send(JSON.stringify({
+        type: 'battleReport',
+        payload: { battleReport: report },
+      }));
+    } else {
+      connection.send(JSON.stringify({ type: 'error', payload: { message: 'Battle report not available' } }));
+    }
+  }).catch(err => {
+    connection.send(JSON.stringify({ type: 'error', payload: { message: 'Failed to get battle report' } }));
   });
 
   return { roomId, playerId };
