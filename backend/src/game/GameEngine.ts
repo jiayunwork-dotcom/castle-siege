@@ -109,11 +109,12 @@ export class GameEngine {
     }
 
     const wasEndOfTurn = this.state.subPhase === 'supply';
+    const completedTurn = this.state.turn;
 
     advanceTurn(this.state);
 
     if (wasEndOfTurn) {
-      this.snapshotSystem.captureSnapshot(this.state);
+      this.snapshotSystem.captureSnapshot(this.state, completedTurn);
       this.snapshotSystem.recordResourceBefore(this.state);
     }
 

@@ -134,7 +134,7 @@ export class SnapshotSystem {
     }
   }
 
-  captureSnapshot(state: GameState): void {
+  captureSnapshot(state: GameState, actualTurn: number): void {
     const killedByAttacker = this.combatRecords.filter(
       r => r.killed && r.targetFaction === 'defender'
     ).length;
@@ -247,7 +247,7 @@ export class SnapshotSystem {
     }));
 
     const snapshot: TurnSnapshot = {
-      turn: state.turn,
+      turn: actualTurn,
       attackerUnitCount: attackerUnits.length,
       defenderUnitCount: defenderUnits.length,
       attackerSiegeEngineCount: state.siegeEngines.filter(e => e.faction === 'attacker').length,

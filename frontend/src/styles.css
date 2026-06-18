@@ -254,9 +254,10 @@ input:focus {
   box-shadow: 0 0 8px rgba(78, 205, 196, 0.4);
 }
 
-.thumbnail-wrapper {
-  margin-left: 16px;
-  flex-shrink: 0;
+.thumbnail-section {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #2a3a4a;
 }
 
 .stats-panels {

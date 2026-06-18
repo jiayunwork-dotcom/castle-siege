@@ -255,43 +255,160 @@ function BattleReportScreen(props: BattleReportProps) {
 
     const mapW = 20;
     const mapH = 20;
-    const tileSize = 12;
+    const tileSize = 20;
+    const legendH = 36;
+    const canvasW = mapW * tileSize;
+    const canvasH = mapH * tileSize + legendH;
 
-    canvas.width = mapW * tileSize;
-    canvas.height = mapH * tileSize;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = canvasW * dpr;
+    canvas.height = canvasH * dpr;
+    canvas.style.width = canvasW + 'px';
+    canvas.style.height = canvasH + 'px';
+    ctx.scale(dpr, dpr);
 
-    ctx.fillStyle = '#1a2a3a';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#0f1f2f';
+    ctx.fillRect(0, 0, canvasW, canvasH);
 
     for (let y = 0; y < mapH; y++) {
       for (let x = 0; x < mapW; x++) {
-        ctx.fillStyle = (x + y) % 2 === 0 ? '#2d4a3e' : '#264035';
+        ctx.fillStyle = (x + y) % 2 === 0 ? '#1e3a2e' : '#193028';
         ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
       }
     }
 
     for (const d of snap.defenses) {
+      const px = d.position.x * tileSize;
+      const py = d.position.y * tileSize;
       const hpPct = d.hp / d.maxHp;
-      if (d.type === 'moat') {
-        ctx.fillStyle = 'rgba(37, 99, 235, 0.6)';
-      } else if (d.type === 'keep') {
-        ctx.fillStyle = hpPct > 0.5 ? '#ffd700' : hpPct > 0.25 ? '#f39c12' : '#e94560';
-      } else {
-        ctx.fillStyle = hpPct > 0.5 ? '#6b6b7a' : hpPct > 0.25 ? '#5a5a68' : '#4a4a58';
+
+      switch (d.type) {
+        case 'moat':
+          ctx.fillStyle = 'rgba(37, 99, 235, 0.5)';
+          ctx.fillRect(px + 2, py + 2, tileSize - 4, tileSize - 4);
+          break;
+        case 'keep':
+          ctx.fillStyle = hpPct > 0.5 ? '#ffd700' : hpPct > 0.25 ? '#f39c12' : '#e94560';
+          ctx.fillRect(px + 4, py + 4, tileSize - 8, tileSize - 8);
+          ctx.strokeStyle = '#aa8800';
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(px + 4, py + 4, tileSize - 8, tileSize - 8);
+          break;
+        case 'gate':
+          ctx.fillStyle = hpPct > 0.5 ? '#8b5e3c' : hpPct > 0.25 ? '#6b4423' : '#4a2f18';
+          ctx.fillRect(px + 2, py + 4, tileSize - 4, tileSize - 8);
+          ctx.strokeStyle = '#654321';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(px + 2, py + 4, tileSize - 4, tileSize - 8);
+          break;
+        case 'outerWall':
+          ctx.fillStyle = hpPct > 0.5 ? '#7a7a8e' : hpPct > 0.25 ? '#5a5a6e' : '#3a3a4e';
+          ctx.fillRect(px + 1, py + 1, tileSize - 2, tileSize - 2);
+          break;
+        case 'innerWall':
+          ctx.fillStyle = hpPct > 0.5 ? '#8a8a9e' : hpPct > 0.25 ? '#6a6a7e' : '#4a4a5e';
+          ctx.fillRect(px + 3, py + 3, tileSize - 6, tileSize - 6);
+          break;
+        case 'tower':
+        case 'arrowTower':
+          ctx.fillStyle = hpPct > 0.5 ? '#6a6a7e' : hpPct > 0.25 ? '#4a4a5e' : '#3a3a4e';
+          ctx.fillRect(px + 4, py + 4, tileSize - 8, tileSize - 8);
+          ctx.fillStyle = d.type === 'arrowTower' ? '#e94560' : '#8b0000';
+          ctx.fillRect(px + tileSize / 2 - 2, py + 2, 4, 4);
+          break;
       }
-      ctx.fillRect(d.position.x * tileSize + 1, d.position.y * tileSize + 1, tileSize - 2, tileSize - 2);
+
+      if (d.maxHp > 0 && d.type !== 'moat') {
+        const barW = tileSize - 4;
+        const barH = 2;
+        ctx.fillStyle = '#111';
+        ctx.fillRect(px + 2, py - 1, barW, barH);
+        ctx.fillStyle = hpPct > 0.5 ? '#2ecc71' : hpPct > 0.25 ? '#f39c12' : '#e94560';
+        ctx.fillRect(px + 2, py - 1, barW * hpPct, barH);
+      }
     }
 
     for (const e of snap.siegeEngines) {
-      ctx.fillStyle = '#e94560';
-      ctx.fillRect(e.position.x * tileSize + 2, e.position.y * tileSize + 2, tileSize - 4, tileSize - 4);
+      const px = e.position.x * tileSize;
+      const py = e.position.y * tileSize;
+      ctx.fillStyle = '#b45309';
+      ctx.fillRect(px + 5, py + 5, tileSize - 10, tileSize - 10);
+      ctx.strokeStyle = '#e94560';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(px + 5, py + 5, tileSize - 10, tileSize - 10);
     }
 
     for (const u of snap.units) {
-      ctx.fillStyle = u.faction === 'attacker' ? '#ff6b6b' : '#4ecdc4';
-      ctx.beginPath();
-      ctx.arc(u.position.x * tileSize + tileSize / 2, u.position.y * tileSize + tileSize / 2, 3, 0, Math.PI * 2);
-      ctx.fill();
+      const px = u.position.x * tileSize;
+      const py = u.position.y * tileSize;
+      const cx = px + tileSize / 2;
+      const cy = py + tileSize / 2;
+
+      ctx.fillStyle = u.faction === 'attacker' ? '#e94560' : '#4ecdc4';
+
+      switch (u.type) {
+        case 'infantry':
+          ctx.fillRect(cx - 5, cy - 5, 10, 10);
+          break;
+        case 'archer':
+          ctx.beginPath();
+          ctx.moveTo(cx, cy - 6);
+          ctx.lineTo(cx - 5, cy + 5);
+          ctx.lineTo(cx + 5, cy + 5);
+          ctx.closePath();
+          ctx.fill();
+          break;
+        case 'cavalry':
+          ctx.beginPath();
+          ctx.moveTo(cx, cy - 6);
+          ctx.lineTo(cx + 6, cy);
+          ctx.lineTo(cx, cy + 6);
+          ctx.lineTo(cx - 6, cy);
+          ctx.closePath();
+          ctx.fill();
+          break;
+        case 'sapper':
+          ctx.beginPath();
+          ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+        case 'scout':
+          ctx.beginPath();
+          ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+      }
+
+      ctx.strokeStyle = u.faction === 'attacker' ? '#ff9999' : '#80e8e0';
+      ctx.lineWidth = 0.5;
+      if (u.type === 'infantry') {
+        ctx.strokeRect(cx - 5, cy - 5, 10, 10);
+      } else if (u.type !== 'sapper' && u.type !== 'scout') {
+        ctx.stroke();
+      }
+    }
+
+    const legendY = mapH * tileSize + 8;
+    ctx.font = '10px Arial';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+
+    const legendItems = [
+      { color: '#7a7a8e', label: '城墙' },
+      { color: '#8b5e3c', label: '城门' },
+      { color: '#ffd700', label: '主堡' },
+      { color: 'rgba(37,99,235,0.5)', label: '护城河' },
+      { color: '#e94560', label: '攻方' },
+      { color: '#4ecdc4', label: '守方' },
+    ];
+
+    let lx = 6;
+    for (const item of legendItems) {
+      ctx.fillStyle = item.color;
+      ctx.fillRect(lx, legendY + 2, 10, 10);
+      ctx.fillStyle = '#a0a0c0';
+      ctx.fillText(item.label, lx + 13, legendY + 7);
+      lx += ctx.measureText(item.label).width + 24;
     }
   }
 
@@ -499,12 +616,14 @@ function BattleReportScreen(props: BattleReportProps) {
               style={{ flex: 1 }}
             />
             <span style={{ color: '#6a7a8a', 'font-size': '12px' }}>回合 {maxTurn()}</span>
+          </div>
 
-            <div class="thumbnail-wrapper">
-              <div style={{ color: '#a0a0c0', 'font-size': '12px', 'margin-bottom': '4px', 'text-align': 'center' }}>
-                第 {selectedTurn() + 1} 回合战场快照
-              </div>
-              <canvas ref={setThumbnailRef} style={{ border: '2px solid #3a3a5a', 'border-radius': '4px' }} />
+          <div class="thumbnail-section">
+            <div style={{ color: '#a0a0c0', 'font-size': '13px', 'margin-bottom': '6px', 'text-align': 'center' }}>
+              第 {selectedTurn() + 1} 回合战场快照
+            </div>
+            <div style={{ display: 'flex', 'justify-content': 'center' }}>
+              <canvas ref={setThumbnailRef} style={{ border: '2px solid #3a3a5a', 'border-radius': '6px' }} />
             </div>
           </div>
         </div>
