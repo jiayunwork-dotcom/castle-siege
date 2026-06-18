@@ -1,4 +1,4 @@
-import { GameState, DefenseStructure, SiegeEngine, Position, DefenseType, SiegeEngineType, Faction } from '../types/game';
+import { GameState, DefenseStructure, SiegeEngine, Position, DefenseType, SiegeEngineType, Faction, WallDirection } from '../types/game';
 import { generateId } from '../utils/helpers';
 import { DEFENSE_COSTS, DEFENSE_STATS, SIEGE_ENGINE_COSTS, SIEGE_ENGINE_STATS, UNIT_COSTS, UNIT_BASE_STATS } from '../constants/gameConfig';
 import { canAfford, deductResources } from './turnSystem';
@@ -176,6 +176,34 @@ export function trainUnit(
     return { success: false, message: 'Insufficient resources' };
   }
 
+  const tileBlocked = isPositionBlocked(state, position);
+  if (tileBlocked) {
+    return { success: false, message: 'Position already occupied' };
+  }
+
+  let onWall = false;
+  let wallSection: WallDirection | undefined;
+
+  if (faction === 'defender') {
+    const wallDefense = state.defenses.find(d =>
+      (d.type === 'outerWall' || d.type === 'innerWall' || d.type === 'tower' || d.type === 'arrowTower' || d.type === 'gate') &&
+      d.position.x === position.x &&
+      d.position.y === position.y &&
+      d.hp > 0
+    );
+    if (wallDefense) {
+      onWall = true;
+      wallSection = wallDefense.wallSection;
+    }
+  }
+
+  if (faction === 'attacker') {
+    const mapHeight = state.config.mapHeight;
+    if (position.y !== mapHeight - 1 && position.y !== mapHeight - 2) {
+      return { success: false, message: 'Attacker units must be recruited in the staging area' };
+    }
+  }
+
   const baseStats = { ...UNIT_BASE_STATS[unitType as keyof typeof UNIT_BASE_STATS] };
   const unit = {
     id: generateId(),
@@ -186,11 +214,22 @@ export function trainUnit(
     stats: baseStats,
     moved: true,
     attacked: true,
-    onWall: false,
+    onWall,
+    wallSection,
   };
 
   state.units.push(unit);
   state.resources[faction] = deductResources(state.resources[faction], cost) as any;
 
   return { success: true, unit };
+}
+
+function isPositionBlocked(state: GameState, pos: Position): boolean {
+  const unitAtPos = state.units.find(u => u.position.x === pos.x && u.position.y === pos.y);
+  if (unitAtPos) return true;
+
+  const siegeAtPos = state.siegeEngines.find(s => s.position.x === pos.x && s.position.y === pos.y);
+  if (siegeAtPos) return true;
+
+  return false;
 }

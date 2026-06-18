@@ -13,7 +13,7 @@ export const UNIT_BASE_STATS: Record<string, UnitStats> = {
     attack: 10,
     defense: 5,
     speed: 2,
-    range: 5,
+    range: 3,
     hp: 60,
     maxHp: 60,
   },

@@ -5,11 +5,20 @@ import ResourcePanel from './ResourcePanel';
 import UnitInfoPanel from './UnitInfoPanel';
 import ChatPanel from './ChatPanel';
 import TurnControl from './TurnControl';
-import type { Unit, SiegeEngine, DefenseStructure, Position } from '../types/game';
+import UnitRecruitPanel from './UnitRecruitPanel';
+import type { Unit, SiegeEngine, DefenseStructure, Position, UnitType, Resources } from '../types/game';
 
 interface GameScreenProps {
   onBack: () => void;
 }
+
+const UNIT_COSTS: Record<UnitType, Resources> = {
+  infantry: { gold: 50, wood: 10, stone: 0, food: 20 },
+  archer: { gold: 60, wood: 20, stone: 0, food: 15 },
+  cavalry: { gold: 120, wood: 10, stone: 0, food: 30 },
+  sapper: { gold: 80, wood: 30, stone: 10, food: 20 },
+  scout: { gold: 40, wood: 5, stone: 0, food: 10 },
+};
 
 function GameScreen(props: GameScreenProps) {
   const gameState = () => gameWS.gameState;
@@ -18,14 +27,61 @@ function GameScreen(props: GameScreenProps) {
   const [selectedUnit, setSelectedUnit] = createSignal<Unit | null>(null);
   const [selectedEngine, setSelectedEngine] = createSignal<SiegeEngine | null>(null);
   const [selectedDefense, setSelectedDefense] = createSignal<DefenseStructure | null>(null);
+  const [selectedUnitType, setSelectedUnitType] = createSignal<UnitType | null>(null);
   const [actionMode, setActionMode] = createSignal<'none' | 'move' | 'attack' | 'build' | 'repair'>('none');
 
   const isMyTurn = createMemo(() => {
     return gameState()?.currentFaction === player()?.faction;
   });
 
-  const myUnits = createMemo(() => {
-    return gameState()?.units.filter(u => u.faction === player()?.faction) || [];
+  const playerResources = createMemo(() => {
+    if (!gameState() || !player()) return null;
+    return gameState()!.resources[player()!.faction];
+  });
+
+  const canAffordUnit = (unitType: UnitType) => {
+    const resources = playerResources();
+    const cost = UNIT_COSTS[unitType];
+    if (!resources || !cost) return false;
+    return resources.gold >= cost.gold &&
+      resources.wood >= cost.wood &&
+      resources.stone >= cost.stone &&
+      resources.food >= cost.food;
+  };
+
+  const canRecruitNow = createMemo(() => {
+    if (!isMyTurn() || !player()) return false;
+    const faction = player()!.faction;
+    const subPhase = gameState()?.subPhase;
+    if (faction === 'defender') {
+      return subPhase === 'buildRepair';
+    } else {
+      return subPhase === 'movement';
+    }
+  });
+
+  let lastActionData: { attackerPos?: Position; targetPos?: Position } = {};
+
+  onMount(() => {
+    gameWS.on('gameStateUpdate', (payload: any) => {
+      if (payload.action === 'attack' && lastActionData.attackerPos && lastActionData.targetPos) {
+        setTimeout(() => {
+          const fn = (window as any).triggerAttackAnimation;
+          if (fn && lastActionData.attackerPos && lastActionData.targetPos) {
+            fn(lastActionData.attackerPos, lastActionData.targetPos);
+          }
+          lastActionData = {};
+        }, 0);
+      }
+    });
+  });
+
+  createEffect(() => {
+    const subPhase = gameState()?.subPhase;
+    const faction = gameState()?.currentFaction;
+    if (faction !== player()?.faction || !canRecruitNow()) {
+      setSelectedUnitType(null);
+    }
   });
 
   const handleTileClick = (x: number, y: number) => {
@@ -38,6 +94,50 @@ function GameScreen(props: GameScreenProps) {
     const engine = state.siegeEngines.find(s => s.position.x === x && s.position.y === y);
     const defense = state.defenses.find(d => d.position.x === x && d.position.y === y);
 
+    if (selectedUnitType() && canRecruitNow()) {
+      if (!canAffordUnit(selectedUnitType()!)) {
+        gameWS.setErrorMessage('资源不足');
+        setTimeout(() => gameWS.setErrorMessage(null), 2000);
+        return;
+      }
+
+      const myFaction = player()?.faction;
+      let validPosition = false;
+
+      if (myFaction === 'defender') {
+        const wallDefense = state.defenses.find(d =>
+          (d.type === 'outerWall' || d.type === 'innerWall' || d.type === 'tower' || d.type === 'arrowTower' || d.type === 'gate') &&
+          d.position.x === x && d.position.y === y && d.hp > 0
+        );
+        const occupied = state.units.some(u => u.position.x === x && u.position.y === y);
+        validPosition = !!wallDefense && !occupied;
+        if (!validPosition) {
+          gameWS.setErrorMessage('只能部署在空的城墙上');
+          setTimeout(() => gameWS.setErrorMessage(null), 2000);
+          return;
+        }
+      } else {
+        const mapHeight = state.config.mapHeight;
+        validPosition = (y === mapHeight - 1 || y === mapHeight - 2);
+        if (!validPosition) {
+          gameWS.setErrorMessage('攻方只能在底部集结区招募');
+          setTimeout(() => gameWS.setErrorMessage(null), 2000);
+          return;
+        }
+        const occupied = state.units.some(u => u.position.x === x && u.position.y === y) ||
+          state.siegeEngines.some(s => s.position.x === x && s.position.y === y);
+        if (occupied) {
+          gameWS.setErrorMessage('该位置已被占用');
+          setTimeout(() => gameWS.setErrorMessage(null), 2000);
+          return;
+        }
+      }
+
+      gameWS.trainUnit(selectedUnitType()!, { x, y });
+      setSelectedUnitType(null);
+      return;
+    }
+
     if (actionMode() === 'move' && selectedUnit()) {
       gameWS.moveUnit(selectedUnit()!.id, { x, y });
       setActionMode('none');
@@ -46,12 +146,25 @@ function GameScreen(props: GameScreenProps) {
     }
 
     if (actionMode() === 'attack' && selectedUnit()) {
+      const attacker = selectedUnit()!;
       if (unit && unit.faction !== player()?.faction) {
-        gameWS.attack(selectedUnit()!.id, unit.id, 'unit');
+        lastActionData = {
+          attackerPos: { ...attacker.position },
+          targetPos: { ...unit.position },
+        };
+        gameWS.attack(attacker.id, unit.id, 'unit');
       } else if (defense && player()?.faction === 'attacker') {
-        gameWS.attack(selectedUnit()!.id, defense.id, 'defense');
+        lastActionData = {
+          attackerPos: { ...attacker.position },
+          targetPos: { ...defense.position },
+        };
+        gameWS.attack(attacker.id, defense.id, 'defense');
       } else if (engine && player()?.faction === 'defender') {
-        gameWS.attack(selectedUnit()!.id, engine.id, 'siegeEngine');
+        lastActionData = {
+          attackerPos: { ...attacker.position },
+          targetPos: { ...engine.position },
+        };
+        gameWS.attack(attacker.id, engine.id, 'siegeEngine');
       }
       setActionMode('none');
       setSelectedUnit(null);
@@ -63,16 +176,19 @@ function GameScreen(props: GameScreenProps) {
       setSelectedEngine(null);
       setSelectedDefense(null);
       setActionMode('none');
+      setSelectedUnitType(null);
     } else if (engine && player()?.faction === 'attacker') {
       setSelectedEngine(engine);
       setSelectedUnit(null);
       setSelectedDefense(null);
       setActionMode('none');
+      setSelectedUnitType(null);
     } else if (defense && player()?.faction === 'defender') {
       setSelectedDefense(defense);
       setSelectedUnit(null);
       setSelectedEngine(null);
       setActionMode('none');
+      setSelectedUnitType(null);
     } else {
       setSelectedUnit(null);
       setSelectedEngine(null);
@@ -84,12 +200,14 @@ function GameScreen(props: GameScreenProps) {
   const handleMoveClick = () => {
     if (selectedUnit() && !selectedUnit()!.moved && gameState()?.subPhase === 'movement') {
       setActionMode('move');
+      setSelectedUnitType(null);
     }
   };
 
   const handleAttackClick = () => {
     if (selectedUnit() && !selectedUnit()!.attacked && gameState()?.subPhase === 'attack') {
       setActionMode('attack');
+      setSelectedUnitType(null);
     }
   };
 
@@ -99,6 +217,19 @@ function GameScreen(props: GameScreenProps) {
     setSelectedEngine(null);
     setSelectedDefense(null);
     setActionMode('none');
+    setSelectedUnitType(null);
+  };
+
+  const handleSelectUnitType = (type: UnitType | null) => {
+    setSelectedUnitType(type);
+    setSelectedUnit(null);
+    setSelectedEngine(null);
+    setSelectedDefense(null);
+    setActionMode('none');
+  };
+
+  const handleUnitHover = (_unit: Unit | null, _pos: { x: number; y: number } | null) => {
+    // Hover tooltip handled in Battlefield canvas directly
   };
 
   const subPhaseNames: Record<string, string> = {
@@ -121,6 +252,8 @@ function GameScreen(props: GameScreenProps) {
     fog: '大雾',
     snow: '大雪',
   };
+
+  const errorMessage = () => gameWS.errorMessage;
 
   return (
     <div style={{
@@ -184,7 +317,7 @@ function GameScreen(props: GameScreenProps) {
         overflow: 'hidden',
       }}>
         <div style={{
-          width: '250px',
+          width: '280px',
           padding: '10px',
           background: 'rgba(26, 26, 46, 0.9)',
           'border-right': '2px solid #3a3a5a',
@@ -194,6 +327,17 @@ function GameScreen(props: GameScreenProps) {
           overflow: 'auto',
         }}>
           <ResourcePanel />
+
+          <UnitRecruitPanel
+            playerFaction={player()?.faction}
+            currentFaction={gameState()?.currentFaction}
+            subPhase={gameState()?.subPhase || 'movement'}
+            isMyTurn={isMyTurn()}
+            selectedUnitType={selectedUnitType()}
+            onSelectUnitType={handleSelectUnitType}
+            resources={playerResources()}
+          />
+
           <UnitInfoPanel
             selectedUnit={selectedUnit()}
             selectedEngine={selectedEngine()}
@@ -223,9 +367,32 @@ function GameScreen(props: GameScreenProps) {
             selectedUnit={selectedUnit()}
             selectedEngine={selectedEngine()}
             selectedDefense={selectedDefense()}
+            selectedUnitType={selectedUnitType()}
             actionMode={actionMode()}
+            subPhase={gameState()?.subPhase || 'movement'}
+            currentFaction={gameState()?.currentFaction}
             onTileClick={handleTileClick}
+            onUnitHover={handleUnitHover}
           />
+
+          {errorMessage() && (
+            <div style={{
+              position: 'fixed',
+              top: '80px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              padding: '12px 24px',
+              background: 'rgba(231, 76, 60, 0.95)',
+              color: 'white',
+              'border-radius': '8px',
+              'font-weight': 'bold',
+              'box-shadow': '0 4px 20px rgba(231, 76, 60, 0.4)',
+              'z-index': 100,
+              animation: 'shake 0.3s ease-in-out',
+            }}>
+              ⚠️ {errorMessage()}
+            </div>
+          )}
         </div>
 
         <div style={{

@@ -8,17 +8,47 @@ export function canMoveUnit(state: GameState, unitId: string, targetPos: Positio
   if (unit.moved) return { success: false, message: 'Unit already moved this turn' };
   if (unit.faction !== state.currentFaction) return { success: false, message: "Not your faction's turn" };
 
-  const distance = getDistance(unit.position, targetPos);
   const weatherMod = WEATHER_MODIFIERS[state.weather].movementSpeed;
   const maxMove = Math.floor(unit.stats.speed * weatherMod);
 
-  if (distance > maxMove) return { success: false, message: 'Target out of movement range' };
+  if (unit.onWall) {
+    if (unit.position.y !== targetPos.y) {
+      return { success: false, message: 'Units on wall can only move horizontally along the wall' };
+    }
+    const dx = Math.abs(unit.position.x - targetPos.x);
+    if (dx > maxMove) {
+      return { success: false, message: 'Target out of movement range' };
+    }
+    const targetDefense = state.defenses.find(d =>
+      (d.type === 'outerWall' || d.type === 'innerWall' || d.type === 'tower' || d.type === 'arrowTower' || d.type === 'gate') &&
+      d.position.x === targetPos.x &&
+      d.position.y === targetPos.y &&
+      d.hp > 0
+    );
+    if (!targetDefense) {
+      return { success: false, message: 'Cannot move off the wall' };
+    }
+  } else {
+    const distance = getDistance(unit.position, targetPos);
+    if (distance > maxMove) return { success: false, message: 'Target out of movement range' };
+  }
 
   const tileBlocked = isPositionBlocked(state, targetPos, unit.faction);
   if (tileBlocked) return { success: false, message: 'Target position is blocked' };
 
   unit.position = { ...targetPos };
   unit.moved = true;
+
+  if (unit.faction === 'defender') {
+    const wallDefense = state.defenses.find(d =>
+      (d.type === 'outerWall' || d.type === 'innerWall' || d.type === 'tower' || d.type === 'arrowTower' || d.type === 'gate') &&
+      d.position.x === targetPos.x &&
+      d.position.y === targetPos.y &&
+      d.hp > 0
+    );
+    unit.onWall = !!wallDefense;
+    unit.wallSection = wallDefense?.wallSection;
+  }
 
   return { success: true };
 }

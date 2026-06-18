@@ -76,8 +76,11 @@ export class GameEngine {
   }
 
   train(unitType: string, position: Position, ownerId: string): { success: boolean; message?: string } {
-    if (this.state.subPhase !== 'buildRepair') {
-      return { success: false, message: 'Not build/repair phase' };
+    if (this.state.currentFaction === 'defender' && this.state.subPhase !== 'buildRepair') {
+      return { success: false, message: 'Defenders can only train units during build/repair phase' };
+    }
+    if (this.state.currentFaction === 'attacker' && this.state.subPhase !== 'movement' && this.state.subPhase !== 'buildRepair') {
+      return { success: false, message: 'Attackers can only train units during movement phase' };
     }
     return trainUnit(this.state, unitType, position, ownerId, this.state.currentFaction);
   }
