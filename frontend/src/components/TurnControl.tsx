@@ -1,6 +1,7 @@
 interface TurnControlProps {
   onEndPhase: () => void;
   isMyTurn: boolean;
+  currentSubPhase: string;
 }
 
 const subPhaseNames: Record<string, string> = {
@@ -29,13 +30,13 @@ function TurnControl(props: TurnControlProps) {
           当前阶段
         </p>
         <p style={{ 'font-weight': 'bold', 'font-size': '1.1rem', color: '#e94560' }}>
-          {subPhaseNames.movement}
+          {subPhaseNames[props.currentSubPhase] || props.currentSubPhase}
         </p>
       </div>
 
       <div style={{ 'margin-bottom': '12px', padding: '8px', background: 'rgba(58, 58, 90, 0.5)', 'border-radius': '6px' }}>
         <p style={{ 'font-size': '0.8rem', color: '#a0a0c0' }}>
-          {subPhaseDescriptions.movement}
+          {subPhaseDescriptions[props.currentSubPhase] || ''}
         </p>
       </div>
 

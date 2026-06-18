@@ -108,6 +108,14 @@ class GameWebSocket {
 
       case 'roomUpdated':
         this.setRoom(message.payload.room);
+        if (this.player && message.payload.room) {
+          const updatedPlayer = message.payload.room.players.find(
+            (p: any) => p.id === this.player!.id
+          );
+          if (updatedPlayer) {
+            this.setPlayer(updatedPlayer);
+          }
+        }
         break;
 
       case 'playerJoined':

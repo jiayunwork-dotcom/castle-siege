@@ -204,7 +204,11 @@ function GameScreen(props: GameScreenProps) {
             subPhase={gameState()?.subPhase || 'movement'}
             isMyTurn={isMyTurn()}
           />
-          <TurnControl onEndPhase={handleEndSubPhase} isMyTurn={isMyTurn()} />
+          <TurnControl
+            onEndPhase={handleEndSubPhase}
+            isMyTurn={isMyTurn()}
+            currentSubPhase={gameState()?.subPhase || 'movement'}
+          />
         </div>
 
         <div style={{

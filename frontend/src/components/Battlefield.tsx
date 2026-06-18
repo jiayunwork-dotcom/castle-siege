@@ -1,4 +1,4 @@
-import { createMemo, createSignal, onMount, onCleanup } from 'solid-js';
+import { createMemo, createSignal, onMount, onCleanup, createEffect } from 'solid-js';
 import type { GameState, Unit, SiegeEngine, DefenseStructure, Position, Faction } from '../types/game';
 
 interface BattlefieldProps {
@@ -22,25 +22,30 @@ function Battlefield(props: BattlefieldProps) {
   const mapHeight = createMemo(() => props.gameState?.config.mapHeight || 20);
 
   let animationFrame: number;
+  let isDrawing = false;
 
   const draw = () => {
     const canvas = canvasRef();
-    if (!canvas || !props.gameState) return;
+    if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const width = mapWidth() * TILE_SIZE;
-    const height = mapHeight() * TILE_SIZE;
+    const w = mapWidth();
+    const h = mapHeight();
+    const width = w * TILE_SIZE;
+    const height = h * TILE_SIZE;
 
-    canvas.width = width;
-    canvas.height = height;
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+    }
 
     ctx.fillStyle = '#1a2a3a';
     ctx.fillRect(0, 0, width, height);
 
-    for (let y = 0; y < mapHeight(); y++) {
-      for (let x = 0; x < mapWidth(); x++) {
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
         const px = x * TILE_SIZE + TILE_PADDING;
         const py = y * TILE_SIZE + TILE_PADDING;
         const size = TILE_SIZE - TILE_PADDING * 2;
@@ -51,42 +56,45 @@ function Battlefield(props: BattlefieldProps) {
       }
     }
 
-    props.gameState.defenses.forEach(defense => {
-      drawDefense(ctx, defense);
-    });
+    const state = props.gameState;
+    if (state) {
+      state.defenses.forEach(defense => {
+        drawDefense(ctx, defense);
+      });
 
-    props.gameState.siegeEngines.forEach(engine => {
-      drawSiegeEngine(ctx, engine);
-    });
+      state.siegeEngines.forEach(engine => {
+        drawSiegeEngine(ctx, engine);
+      });
 
-    props.gameState.units.forEach(unit => {
-      drawUnit(ctx, unit);
-    });
+      state.units.forEach(unit => {
+        drawUnit(ctx, unit);
+      });
 
-    if (props.selectedUnit) {
-      highlightTile(ctx, props.selectedUnit.position, '#e94560');
-      if (props.actionMode === 'move') {
-        drawMovementRange(ctx, props.selectedUnit, props.gameState);
-      } else if (props.actionMode === 'attack') {
-        drawAttackRange(ctx, props.selectedUnit, props.gameState);
+      if (props.selectedUnit) {
+        highlightTile(ctx, props.selectedUnit.position, '#e94560');
+        if (props.actionMode === 'move') {
+          drawMovementRange(ctx, props.selectedUnit, state);
+        } else if (props.actionMode === 'attack') {
+          drawAttackRange(ctx, props.selectedUnit, state);
+        }
+      }
+
+      if (props.selectedEngine) {
+        highlightTile(ctx, props.selectedEngine.position, '#ff6b6b');
+      }
+
+      if (props.selectedDefense) {
+        highlightTile(ctx, props.selectedDefense.position, '#4ecdc4');
       }
     }
 
-    if (props.selectedEngine) {
-      highlightTile(ctx, props.selectedEngine.position, '#ff6b6b');
-    }
-
-    if (props.selectedDefense) {
-      highlightTile(ctx, props.selectedDefense.position, '#4ecdc4');
-    }
-
-    if (hoverPos()) {
-      const pos = hoverPos()!;
+    const hover = hoverPos();
+    if (hover) {
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
       ctx.lineWidth = 2;
       ctx.strokeRect(
-        pos.x * TILE_SIZE + TILE_PADDING,
-        pos.y * TILE_SIZE + TILE_PADDING,
+        hover.x * TILE_SIZE + TILE_PADDING,
+        hover.y * TILE_SIZE + TILE_PADDING,
         TILE_SIZE - TILE_PADDING * 2,
         TILE_SIZE - TILE_PADDING * 2
       );
@@ -420,8 +428,12 @@ function Battlefield(props: BattlefieldProps) {
     setHoverPos(null);
   };
 
-  onMount(() => {
-    draw();
+  createEffect(() => {
+    const canvas = canvasRef();
+    if (canvas && !isDrawing) {
+      isDrawing = true;
+      draw();
+    }
   });
 
   onCleanup(() => {
