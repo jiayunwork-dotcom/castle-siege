@@ -1,0 +1,24 @@
+{
+  "name": "castle-siege-backend",
+  "version": "1.0.0",
+  "description": "Castle Siege multiplayer game backend",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "fastify": "^4.26.0",
+    "@fastify/websocket": "^8.3.1",
+    "@fastify/cors": "^8.5.0",
+    "ioredis": "^5.3.2",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "tsx": "^4.7.0",
+    "@types/node": "^20.11.0",
+    "@types/uuid": "^9.0.7"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "castle-siege-frontend",
+  "version": "1.0.0",
+  "description": "Castle Siege multiplayer game frontend",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "solid-js": "^1.8.12"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "vite": "^5.0.12",
+    "vite-plugin-solid": "^2.8.2"
+  }
+}
