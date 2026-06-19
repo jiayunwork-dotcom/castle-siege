@@ -4,13 +4,15 @@ import LobbyScreen from './components/LobbyScreen';
 import RoomScreen from './components/RoomScreen';
 import GameScreen from './components/GameScreen';
 import BattleReportScreen from './components/BattleReport';
+import SinglePlayerConfig from './components/SinglePlayerConfig';
 import type { GameState, Room } from './types/game';
 
-type Screen = 'lobby' | 'room' | 'game' | 'battleReport';
+type Screen = 'lobby' | 'room' | 'game' | 'battleReport' | 'singlePlayerConfig';
 
 function App() {
   const [currentScreen, setCurrentScreen] = createSignal<Screen>('lobby');
   const [isConnected, setIsConnected] = createSignal(false);
+  const [singlePlayerName, setSinglePlayerName] = createSignal('');
 
   onMount(async () => {
     try {
@@ -44,6 +46,16 @@ function App() {
     setCurrentScreen('battleReport');
   };
 
+  const goToSinglePlayerConfig = (playerName: string) => {
+    setSinglePlayerName(playerName);
+    setCurrentScreen('singlePlayerConfig');
+  };
+
+  const goToLobbyFromSinglePlayer = () => {
+    setSinglePlayerName('');
+    setCurrentScreen('lobby');
+  };
+
   return (
     <div style={{ width: '100%', height: '100%' }}>
       {gameWS.errorMessage && (
@@ -51,7 +63,15 @@ function App() {
       )}
 
       {currentScreen() === 'lobby' && (
-        <LobbyScreen isConnected={isConnected()} />
+        <LobbyScreen isConnected={isConnected()} onStartSinglePlayer={goToSinglePlayerConfig} />
+      )}
+
+      {currentScreen() === 'singlePlayerConfig' && (
+        <SinglePlayerConfig
+          playerName={singlePlayerName()}
+          onBack={goToLobbyFromSinglePlayer}
+          isConnected={isConnected()}
+        />
       )}
 
       {currentScreen() === 'room' && (

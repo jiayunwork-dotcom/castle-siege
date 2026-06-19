@@ -12,6 +12,16 @@ import {
   broadcastToRoom,
   sendToPlayer,
   getBattleReportAsync,
+  createSinglePlayerRoom,
+  startSinglePlayerGame,
+  isAITurn,
+  getAIThinkingTimeForRoom,
+  setAIThinking,
+  isAIThinking,
+  processAITurn,
+  setAITimeout,
+  clearAITimeout,
+  isSinglePlayerRoom,
 } from '../managers/roomManager';
 import { saveGameState } from '../redis/gameStore';
 
@@ -62,10 +72,87 @@ export function handleWebSocketMessage(
       return handleChat(connection, message, roomId, playerId);
     case 'getBattleReport':
       return handleGetBattleReport(connection, message, roomId, playerId);
+    case 'createSinglePlayerRoom':
+      return handleCreateSinglePlayerRoom(connection, message);
+    case 'startSinglePlayerGame':
+      return handleStartSinglePlayerGame(connection, message, roomId, playerId);
     default:
       connection.send(JSON.stringify({ type: 'error', payload: { message: 'Unknown message type' } }));
       return {};
   }
+}
+
+function handleCreateSinglePlayerRoom(connection: any, message: WSMessage): { roomId?: string; playerId?: string } {
+  const { playerName, playerFaction, aiDifficulty } = message.payload;
+  const result = createSinglePlayerRoom({ playerName, playerFaction, aiDifficulty });
+
+  const { room, player } = result;
+  registerPlayerSocket(room.id, player.id, connection);
+
+  connection.send(JSON.stringify({
+    type: 'roomCreated',
+    payload: { room, playerId: player.id, player, isSinglePlayer: true },
+  }));
+
+  return { roomId: room.id, playerId: player.id };
+}
+
+function handleStartSinglePlayerGame(connection: any, message: WSMessage, roomId?: string, playerId?: string) {
+  if (!roomId || !playerId) {
+    connection.send(JSON.stringify({ type: 'error', payload: { message: 'Not in a room' } }));
+    return { roomId, playerId };
+  }
+
+  const result = startSinglePlayerGame(roomId, playerId);
+
+  if ('error' in result) {
+    connection.send(JSON.stringify({ type: 'error', payload: { message: (result as any).error } }));
+    return { roomId, playerId };
+  }
+
+  broadcastToRoom(roomId, {
+    type: 'gameStarted',
+    payload: { gameState: (result as any).gameState, isSinglePlayer: true },
+  });
+
+  checkAndStartAITurn(roomId);
+
+  return { roomId, playerId };
+}
+
+function checkAndStartAITurn(roomId: string): void {
+  if (!isAITurn(roomId)) return;
+  if (isAIThinking(roomId)) return;
+
+  const thinkingTime = getAIThinkingTimeForRoom(roomId);
+
+  setAIThinking(roomId, true);
+  broadcastToRoom(roomId, {
+    type: 'aiThinking',
+    payload: { thinking: true, thinkingTime },
+  });
+
+  const timeout = setTimeout(() => {
+    const newState = processAITurn(roomId);
+    setAIThinking(roomId, false);
+
+    if (newState) {
+      broadcastToRoom(roomId, {
+        type: 'aiThinking',
+        payload: { thinking: false },
+      });
+      broadcastToRoom(roomId, {
+        type: 'turnAdvanced',
+        payload: { gameState: newState },
+      });
+
+      if (newState.phase !== 'ended') {
+        setTimeout(() => checkAndStartAITurn(roomId), 500);
+      }
+    }
+  }, thinkingTime);
+
+  setAITimeout(roomId, timeout);
 }
 
 function handleCreateRoom(connection: any, message: WSMessage): { roomId?: string; playerId?: string } {
@@ -390,6 +477,10 @@ function handleEndSubPhase(connection: any, message: WSMessage, roomId?: string,
     type: 'turnAdvanced',
     payload: { gameState: state },
   });
+
+  if (isSinglePlayerRoom(roomId)) {
+    setTimeout(() => checkAndStartAITurn(roomId), 300);
+  }
 
   return { roomId, playerId };
 }

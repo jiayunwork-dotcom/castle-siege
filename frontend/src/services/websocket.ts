@@ -1,5 +1,5 @@
 import { createSignal } from 'solid-js';
-import type { GameState, Room, Player, WSMessage, ChatMessage, Faction, Position, BattleReport } from '../types/game';
+import type { GameState, Room, Player, WSMessage, ChatMessage, Faction, Position, BattleReport, AIDifficulty } from '../types/game';
 
 class GameWebSocket {
   private ws: WebSocket | null = null;
@@ -13,6 +13,8 @@ class GameWebSocket {
   private _chatMessages = createSignal<ChatMessage[]>([]);
   private _errorMessage = createSignal<string | null>(null);
   private _battleReport = createSignal<BattleReport | null>(null);
+  private _isAIThinking = createSignal(false);
+  private _isSinglePlayer = createSignal(false);
 
   private listeners: Map<string, ((data: any) => void)[]> = new Map();
 
@@ -44,6 +46,14 @@ class GameWebSocket {
     return this._battleReport[0]();
   }
 
+  get isAIThinking() {
+    return this._isAIThinking[0]();
+  }
+
+  get isSinglePlayer() {
+    return this._isSinglePlayer[0]();
+  }
+
   setGameState = (value: GameState | null) => this._gameState[1](value);
   setRoom = (value: Room | null) => this._room[1](value);
   setPlayer = (value: Player | null) => this._player[1](value);
@@ -51,6 +61,8 @@ class GameWebSocket {
   setChatMessages = (updater: any) => this._chatMessages[1](updater);
   setErrorMessage = (value: string | null) => this._errorMessage[1](value);
   setBattleReport = (value: BattleReport | null) => this._battleReport[1](value);
+  setIsAIThinking = (value: boolean) => this._isAIThinking[1](value);
+  setIsSinglePlayer = (value: boolean) => this._isSinglePlayer[1](value);
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -108,6 +120,9 @@ class GameWebSocket {
       case 'roomJoined':
         this.setRoom(message.payload.room);
         this.setPlayer(message.payload.player);
+        if (message.payload.isSinglePlayer) {
+          this.setIsSinglePlayer(true);
+        }
         localStorage.setItem('playerId', message.payload.playerId);
         localStorage.setItem('roomId', message.payload.room.id);
         break;
@@ -142,10 +157,17 @@ class GameWebSocket {
 
       case 'gameStarted':
         this.setGameState(message.payload.gameState);
+        if (message.payload.isSinglePlayer) {
+          this.setIsSinglePlayer(true);
+        }
         if (this.room) {
           const updatedRoom = { ...this.room!, gameState: message.payload.gameState };
           this.setRoom(updatedRoom);
         }
+        break;
+
+      case 'aiThinking':
+        this.setIsAIThinking(message.payload.thinking);
         break;
 
       case 'gameStateUpdate':
@@ -266,11 +288,21 @@ class GameWebSocket {
     this.send('getBattleReport', {});
   }
 
+  createSinglePlayerRoom(playerName: string, playerFaction: Faction, aiDifficulty: AIDifficulty): void {
+    this.send('createSinglePlayerRoom', { playerName, playerFaction, aiDifficulty });
+  }
+
+  startSinglePlayerGame(): void {
+    this.send('startSinglePlayerGame', {});
+  }
+
   disconnect(): void {
     if (this.ws) {
       this.ws.close();
       this.ws = null;
     }
+    this.setIsSinglePlayer(false);
+    this.setIsAIThinking(false);
   }
 }
 

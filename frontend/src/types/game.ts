@@ -272,3 +272,11 @@ export interface BattleReport {
   attackerMVP: MVPData;
   defenderMVP: MVPData;
 }
+
+export type AIDifficulty = 'easy' | 'normal' | 'hard';
+
+export interface SinglePlayerConfig {
+  playerName: string;
+  playerFaction: Faction;
+  aiDifficulty: AIDifficulty;
+}

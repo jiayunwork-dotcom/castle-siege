@@ -3,6 +3,7 @@ import { gameWS } from '../services/websocket';
 
 interface LobbyScreenProps {
   isConnected: boolean;
+  onStartSinglePlayer: (playerName: string) => void;
 }
 
 function LobbyScreen(props: LobbyScreenProps) {
@@ -70,6 +71,27 @@ function LobbyScreen(props: LobbyScreenProps) {
               >
                 🚪 加入房间
               </button>
+              <button
+                onClick={() => {
+                  if (playerName()) {
+                    props.onStartSinglePlayer(playerName());
+                  }
+                }}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  'font-size': '16px',
+                  background: 'linear-gradient(135deg, #9b59b6, #8e44ad)',
+                }}
+                disabled={!props.isConnected || !playerName()}
+              >
+                🎮 单人练习
+              </button>
+              {!playerName() && (
+                <p style={{ 'font-size': '0.85rem', color: '#e94560', 'text-align': 'center', 'margin-top': '-10px' }}>
+                  请先输入玩家名称
+                </p>
+              )}
             </>
           )}
 

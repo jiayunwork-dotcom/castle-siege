@@ -287,3 +287,27 @@ export interface BattleReport {
   attackerMVP: MVPData;
   defenderMVP: MVPData;
 }
+
+export type AIDifficulty = 'easy' | 'normal' | 'hard';
+
+export interface AIDecision {
+  type: 'move' | 'attack' | 'build' | 'repair' | 'supply' | 'endPhase';
+  unitId?: string;
+  targetPosition?: Position;
+  targetId?: string;
+  targetType?: 'unit' | 'defense' | 'siegeEngine';
+  structureType?: DefenseType | SiegeEngineType;
+  structureId?: string;
+  amount?: number;
+}
+
+export interface AIConfig {
+  difficulty: AIDifficulty;
+  faction: Faction;
+}
+
+export interface SinglePlayerConfig {
+  playerName: string;
+  playerFaction: Faction;
+  aiDifficulty: AIDifficulty;
+}

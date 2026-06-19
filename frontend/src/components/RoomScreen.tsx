@@ -1,4 +1,4 @@
-import { createSignal, createMemo, For } from 'solid-js';
+import { createSignal, createMemo, For, onMount } from 'solid-js';
 import { gameWS } from '../services/websocket';
 import type { Player, Faction } from '../types/game';
 
@@ -9,9 +9,18 @@ interface RoomScreenProps {
 function RoomScreen(props: RoomScreenProps) {
   const room = () => gameWS.room;
   const player = () => gameWS.player;
+  const isSinglePlayer = () => gameWS.isSinglePlayer;
 
   const isHost = createMemo(() => {
     return player()?.id === room()?.hostId;
+  });
+
+  onMount(() => {
+    if (isSinglePlayer() && isHost()) {
+      setTimeout(() => {
+        gameWS.startSinglePlayerGame();
+      }, 500);
+    }
   });
 
   const allReady = createMemo(() => {

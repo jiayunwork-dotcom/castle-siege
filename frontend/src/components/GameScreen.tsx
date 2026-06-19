@@ -255,6 +255,7 @@ function GameScreen(props: GameScreenProps) {
   };
 
   const errorMessage = () => gameWS.errorMessage;
+  const isAIThinking = () => gameWS.isAIThinking;
 
   return (
     <div style={{
@@ -375,6 +376,80 @@ function GameScreen(props: GameScreenProps) {
             onTileClick={handleTileClick}
             onUnitHover={handleUnitHover}
           />
+
+          {isAIThinking() && (
+            <div style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.6)',
+              display: 'flex',
+              'align-items': 'center',
+              'justify-content': 'center',
+              'z-index': 50,
+              'pointer-events': 'none',
+            }}>
+              <div style={{
+                padding: '30px 50px',
+                background: 'rgba(26, 26, 46, 0.95)',
+                border: '2px solid #4ecdc4',
+                'border-radius': '16px',
+                'text-align': 'center',
+                'box-shadow': '0 0 40px rgba(78, 205, 196, 0.3)',
+              }}>
+                <div style={{
+                  display: 'flex',
+                  'align-items': 'center',
+                  'justify-content': 'center',
+                  gap: '15px',
+                  'margin-bottom': '10px',
+                }}>
+                  <span style={{
+                    display: 'inline-block',
+                    width: '12px',
+                    height: '12px',
+                    background: '#4ecdc4',
+                    'border-radius': '50%',
+                    animation: 'bounce 0.6s infinite alternate',
+                  }} />
+                  <span style={{
+                    display: 'inline-block',
+                    width: '12px',
+                    height: '12px',
+                    background: '#4ecdc4',
+                    'border-radius': '50%',
+                    animation: 'bounce 0.6s infinite alternate',
+                    'animation-delay': '0.2s',
+                  }} />
+                  <span style={{
+                    display: 'inline-block',
+                    width: '12px',
+                    height: '12px',
+                    background: '#4ecdc4',
+                    'border-radius': '50%',
+                    animation: 'bounce 0.6s infinite alternate',
+                    'animation-delay': '0.4s',
+                  }} />
+                </div>
+                <div style={{
+                  'font-size': '1.5rem',
+                  'font-weight': 'bold',
+                  color: '#4ecdc4',
+                }}>
+                  AI思考中...
+                </div>
+                <div style={{
+                  'font-size': '0.9rem',
+                  color: '#a0a0c0',
+                  'margin-top': '5px',
+                }}>
+                  请稍候
+                </div>
+              </div>
+            </div>
+          )}
 
           {errorMessage() && (
             <div style={{

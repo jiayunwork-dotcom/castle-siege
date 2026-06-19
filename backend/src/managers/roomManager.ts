@@ -1,12 +1,18 @@
-import { Room, Player, Faction, GameState, BattleReport } from '../types/game';
+import { Room, Player, Faction, GameState, BattleReport, SinglePlayerConfig, AIDifficulty } from '../types/game';
 import { generateId } from '../utils/helpers';
 import { saveRoom, getRoom, deleteRoom, listRooms, saveGameState, getGameState, saveBattleReport, getBattleReportFromStore } from '../redis/gameStore';
 import { GameEngine } from '../game/GameEngine';
+import { AIEngine, getAIThinkingTime } from '../game/aiEngine';
 
 interface ActiveRoom {
   room: Room;
   gameEngine?: GameEngine;
   playerSockets: Map<string, any>;
+  isSinglePlayer?: boolean;
+  aiEngine?: AIEngine;
+  aiDifficulty?: AIDifficulty;
+  aiThinking?: boolean;
+  aiTimeout?: NodeJS.Timeout;
 }
 
 const activeRooms = new Map<string, ActiveRoom>();
@@ -235,6 +241,189 @@ export async function getBattleReportAsync(roomId: string): Promise<BattleReport
     }
   }
   return await getBattleReportFromStore(roomId);
+}
+
+export function createSinglePlayerRoom(config: SinglePlayerConfig): { room: Room; player: Player } {
+  const roomId = generateId();
+  const playerId = generateId();
+  const aiPlayerId = generateId();
+
+  const aiFaction: Faction = config.playerFaction === 'attacker' ? 'defender' : 'attacker';
+
+  const player: Player = {
+    id: playerId,
+    name: config.playerName,
+    faction: config.playerFaction,
+    ready: true,
+    connected: true,
+  };
+
+  const aiPlayer: Player = {
+    id: aiPlayerId,
+    name: `AI对手(${config.aiDifficulty === 'easy' ? '简单' : config.aiDifficulty === 'normal' ? '普通' : '困难'})`,
+    faction: aiFaction,
+    ready: true,
+    connected: true,
+  };
+
+  const room: Room = {
+    id: roomId,
+    name: '单人练习',
+    hostId: playerId,
+    players: [player, aiPlayer],
+    createdAt: Date.now(),
+    hasPassword: false,
+    maxPlayers: 2,
+  };
+
+  activeRooms.set(roomId, {
+    room,
+    playerSockets: new Map(),
+    isSinglePlayer: true,
+    aiDifficulty: config.aiDifficulty,
+  });
+
+  saveRoom(room).catch(console.error);
+
+  return { room, player };
+}
+
+export function startSinglePlayerGame(roomId: string, hostPlayerId: string): { gameState: GameState } | { error: string } {
+  const activeRoom = activeRooms.get(roomId);
+  if (!activeRoom) {
+    return { error: 'Room not found' };
+  }
+
+  if (!activeRoom.isSinglePlayer) {
+    return { error: 'Not a single player room' };
+  }
+
+  if (activeRoom.room.hostId !== hostPlayerId) {
+    return { error: 'Only host can start the game' };
+  }
+
+  const gameEngine = new GameEngine(roomId);
+  gameEngine.setPlayers(activeRoom.room.players);
+  const gameState = gameEngine.startGame();
+
+  const aiFaction = activeRoom.room.players.find(p => p.id !== hostPlayerId)?.faction;
+  if (aiFaction && activeRoom.aiDifficulty) {
+    activeRoom.aiEngine = new AIEngine(gameState, aiFaction, activeRoom.aiDifficulty);
+  }
+
+  activeRoom.gameEngine = gameEngine;
+  activeRoom.room.gameState = gameState;
+
+  saveRoom(activeRoom.room).catch(console.error);
+  saveGameState(roomId, gameState).catch(console.error);
+
+  return { gameState };
+}
+
+export function isAITurn(roomId: string): boolean {
+  const activeRoom = activeRooms.get(roomId);
+  if (!activeRoom || !activeRoom.isSinglePlayer || !activeRoom.aiEngine) return false;
+
+  const state = activeRoom.gameEngine?.getState();
+  if (!state) return false;
+
+  return state.currentFaction === activeRoom.aiEngine.getFaction() && state.phase !== 'ended';
+}
+
+export function getAIThinkingTimeForRoom(roomId: string): number {
+  const activeRoom = activeRooms.get(roomId);
+  if (!activeRoom || !activeRoom.aiDifficulty) return 1500;
+  return getAIThinkingTime(activeRoom.aiDifficulty);
+}
+
+export function setAIThinking(roomId: string, thinking: boolean): void {
+  const activeRoom = activeRooms.get(roomId);
+  if (activeRoom) {
+    activeRoom.aiThinking = thinking;
+  }
+}
+
+export function isAIThinking(roomId: string): boolean {
+  const activeRoom = activeRooms.get(roomId);
+  return activeRoom?.aiThinking || false;
+}
+
+export function processAITurn(roomId: string): GameState | null {
+  const activeRoom = activeRooms.get(roomId);
+  if (!activeRoom || !activeRoom.gameEngine || !activeRoom.aiEngine) return null;
+
+  const state = activeRoom.gameEngine.getState();
+  if (state.phase === 'ended') return state;
+
+  activeRoom.aiEngine.updateState(state);
+  const decisions = activeRoom.aiEngine.makeDecisions();
+
+  for (const decision of decisions) {
+    const currentState = activeRoom.gameEngine!.getState();
+    if (currentState.phase === 'ended') break;
+
+    switch (decision.type) {
+      case 'move':
+        if (decision.unitId && decision.targetPosition) {
+          const engine = state.units.some(u => u.id === decision.unitId && u.type.includes('siege'));
+          if (engine) {
+          } else {
+            activeRoom.gameEngine.moveUnit(decision.unitId, decision.targetPosition, activeRoom.aiEngine.getFaction());
+          }
+        }
+        break;
+      case 'attack':
+        if (decision.unitId && decision.targetId && decision.targetType) {
+          const isSiegeEngine = state.siegeEngines.some(e => e.id === decision.unitId);
+          if (isSiegeEngine) {
+            if (decision.targetType === 'defense' || decision.targetType === 'unit') {
+              activeRoom.gameEngine.siegeAttack(decision.unitId, decision.targetId, decision.targetType as any, activeRoom.aiEngine.getFaction());
+            }
+          } else {
+            activeRoom.gameEngine.attackUnit(decision.unitId, decision.targetId, decision.targetType, activeRoom.aiEngine.getFaction());
+          }
+        }
+        break;
+      case 'build':
+        if (decision.structureType && decision.targetPosition) {
+          activeRoom.gameEngine.build(decision.structureType as any, decision.targetPosition);
+        }
+        break;
+      case 'repair':
+        if (decision.structureId && decision.amount) {
+          activeRoom.gameEngine.repair(decision.structureId, decision.amount);
+        }
+        break;
+      case 'endPhase':
+        activeRoom.gameEngine.endSubPhase();
+        break;
+    }
+  }
+
+  const newState = activeRoom.gameEngine.getState();
+  saveGameState(roomId, newState).catch(console.error);
+
+  return newState;
+}
+
+export function setAITimeout(roomId: string, timeout: NodeJS.Timeout): void {
+  const activeRoom = activeRooms.get(roomId);
+  if (activeRoom) {
+    activeRoom.aiTimeout = timeout;
+  }
+}
+
+export function clearAITimeout(roomId: string): void {
+  const activeRoom = activeRooms.get(roomId);
+  if (activeRoom?.aiTimeout) {
+    clearTimeout(activeRoom.aiTimeout);
+    activeRoom.aiTimeout = undefined;
+  }
+}
+
+export function isSinglePlayerRoom(roomId: string): boolean {
+  const activeRoom = activeRooms.get(roomId);
+  return activeRoom?.isSinglePlayer || false;
 }
 
 export { activeRooms };
