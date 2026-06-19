@@ -1,4 +1,4 @@
-import { Room, Player, Faction, GameState, BattleReport, SinglePlayerConfig, AIDifficulty } from '../types/game';
+import { Room, Player, Faction, GameState, BattleReport, SinglePlayerConfig, AIDifficulty, AIDecisionLogEntry, PowerUpdate, RoundPowerRecord } from '../types/game';
 import { generateId } from '../utils/helpers';
 import { saveRoom, getRoom, deleteRoom, listRooms, saveGameState, getGameState, saveBattleReport, getBattleReportFromStore } from '../redis/gameStore';
 import { GameEngine } from '../game/GameEngine';
@@ -13,6 +13,7 @@ interface ActiveRoom {
   aiDifficulty?: AIDifficulty;
   aiThinking?: boolean;
   aiTimeout?: NodeJS.Timeout;
+  roundPowerHistory?: RoundPowerRecord[];
 }
 
 const activeRooms = new Map<string, ActiveRoom>();
@@ -296,6 +297,14 @@ export function createSinglePlayerRoom(config: SinglePlayerConfig): { room: Room
   saveRoom(room).catch(console.error);
   saveGameState(roomId, gameState).catch(console.error);
 
+  const initialPower = calculatePower(gameState);
+  const initialRecord: RoundPowerRecord = {
+    turn: 0,
+    attackerPower: initialPower.attackerPower,
+    defenderPower: initialPower.defenderPower,
+  };
+  activeRoomEntry.roundPowerHistory = [initialRecord];
+
   return { room, player, gameState };
 }
 
@@ -368,6 +377,63 @@ export function processAITurn(roomId: string): GameState | null {
   let iterationCount = 0;
   const MAX_ITERATIONS = 20;
 
+  const UNIT_TYPE_NAMES: Record<string, string> = {
+    infantry: '步兵', archer: '弓箭手', cavalry: '骑兵', sapper: '工兵', scout: '侦察兵',
+  };
+  const SIEGE_TYPE_NAMES: Record<string, string> = {
+    siegeTower: '攻城塔', batteringRam: '攻城锤', catapult: '投石机', ladder: '云梯', ballista: '弩炮', tunnel: '地道',
+  };
+  const DEFENSE_TYPE_NAMES: Record<string, string> = {
+    outerWall: '外墙', innerWall: '内墙', tower: '塔楼', moat: '护城河', gate: '城门', arrowTower: '箭塔', keep: '主堡',
+  };
+  const SUB_PHASE_NAMES: Record<string, string> = {
+    movement: '移动阶段', attack: '攻击阶段', buildRepair: '建设阶段', supply: '补给阶段',
+  };
+
+  const getUnitName = (unitId: string): string => {
+    const unit = state.units.find(u => u.id === unitId);
+    if (unit) return `${UNIT_TYPE_NAMES[unit.type] || unit.type}${unitId.slice(-2).toUpperCase()}`;
+    const engine = state.siegeEngines.find(e => e.id === unitId);
+    if (engine) return `${SIEGE_TYPE_NAMES[engine.type] || engine.type}${unitId.slice(-2).toUpperCase()}`;
+    return unitId.slice(-4);
+  };
+
+  const getTargetName = (targetId: string, targetType?: string): string => {
+    if (targetType === 'defense') {
+      const def = state.defenses.find(d => d.id === targetId);
+      return def ? (DEFENSE_TYPE_NAMES[def.type] || def.type) : targetId.slice(-4);
+    }
+    if (targetType === 'siegeEngine') {
+      const eng = state.siegeEngines.find(e => e.id === targetId);
+      return eng ? (SIEGE_TYPE_NAMES[eng.type] || eng.type) : targetId.slice(-4);
+    }
+    const unit = state.units.find(u => u.id === targetId);
+    if (unit) return `${UNIT_TYPE_NAMES[unit.type] || unit.type}${targetId.slice(-2).toUpperCase()}`;
+    return targetId.slice(-4);
+  };
+
+  const broadcastDecisionLog = (subPhase: string, description: string) => {
+    const logEntry: AIDecisionLogEntry = {
+      timestamp: Date.now(),
+      turn: state.turn,
+      subPhase: subPhase as any,
+      description,
+    };
+    broadcastToRoom(roomId, {
+      type: 'aiDecisionLog',
+      payload: logEntry,
+    });
+  };
+
+  const broadcastPowerUpdate = () => {
+    const currentState = activeRoom.gameEngine!.getState();
+    const power = calculatePower(currentState);
+    broadcastToRoom(roomId, {
+      type: 'powerUpdate',
+      payload: power,
+    });
+  };
+
   while (state.currentFaction === aiFaction && state.phase !== 'ended' && iterationCount < MAX_ITERATIONS) {
     iterationCount++;
     activeRoom.aiEngine.updateState(state);
@@ -381,6 +447,18 @@ export function processAITurn(roomId: string): GameState | null {
       switch (decision.type) {
         case 'move':
           if (decision.unitId && decision.targetPosition) {
+            const unitName = getUnitName(decision.unitId);
+            const dx = decision.targetPosition.x - (currentState.units.find(u => u.id === decision.unitId)?.position.x || currentState.siegeEngines.find(e => e.id === decision.unitId)?.position.x || 0);
+            const dy = decision.targetPosition.y - (currentState.units.find(u => u.id === decision.unitId)?.position.y || currentState.siegeEngines.find(e => e.id === decision.unitId)?.position.y || 0);
+            const steps = Math.abs(dx) + Math.abs(dy);
+            const direction = [];
+            if (dy < 0) direction.push('向城门方向');
+            else if (dy > 0) direction.push('向后退');
+            if (dx < 0) direction.push('向左');
+            else if (dx > 0) direction.push('向右');
+            const dirText = direction.length > 0 ? direction.join('') : '原地调整';
+            broadcastDecisionLog(currentState.subPhase, `${SUB_PHASE_NAMES[currentState.subPhase] || currentState.subPhase}:${unitName}${dirText}前进${steps}格`);
+
             try {
               const currentStateForMove = activeRoom.gameEngine!.getState();
               const isSiegeEngineMove = currentStateForMove.siegeEngines.some(e => e.id === decision.unitId);
@@ -392,46 +470,83 @@ export function processAITurn(roomId: string): GameState | null {
             } catch (e) {
               console.error('AI move error:', e);
             }
+            broadcastPowerUpdate();
           }
           break;
         case 'attack':
           if (decision.unitId && decision.targetId && decision.targetType) {
+            const attackerName = getUnitName(decision.unitId);
+            const targetName = getTargetName(decision.targetId, decision.targetType);
+            let damage = 0;
             try {
               const currentStateForCheck = activeRoom.gameEngine!.getState();
               const isSiegeEngine = currentStateForCheck.siegeEngines.some(e => e.id === decision.unitId);
               if (isSiegeEngine) {
                 if (decision.targetType === 'defense' || decision.targetType === 'unit') {
-                  activeRoom.gameEngine.siegeAttack(decision.unitId, decision.targetId, decision.targetType as any, aiFaction);
+                  const result = activeRoom.gameEngine.siegeAttack(decision.unitId, decision.targetId, decision.targetType as any, aiFaction);
+                  if (result.success && result.damage) damage = result.damage;
                 }
               } else {
-                activeRoom.gameEngine.attackUnit(decision.unitId, decision.targetId, decision.targetType, aiFaction);
+                const result = activeRoom.gameEngine.attackUnit(decision.unitId, decision.targetId, decision.targetType, aiFaction);
+                if (result.success && result.damage) damage = result.damage;
               }
             } catch (e) {
               console.error('AI attack error:', e);
             }
+            const actionVerb = decision.targetType === 'defense' ? '攻击' : '射击';
+            const locationText = decision.targetType === 'defense' ? '' : '';
+            broadcastDecisionLog(activeRoom.gameEngine!.getState().subPhase, `${SUB_PHASE_NAMES[activeRoom.gameEngine!.getState().subPhase] || '攻击阶段'}:${attackerName}${actionVerb}${targetName}${locationText},造成${damage}点伤害`);
+            broadcastPowerUpdate();
           }
           break;
         case 'build':
           if (decision.structureType && decision.targetPosition) {
+            const structName = aiFaction === 'attacker'
+              ? (SIEGE_TYPE_NAMES[decision.structureType] || decision.structureType)
+              : (DEFENSE_TYPE_NAMES[decision.structureType] || decision.structureType);
+            broadcastDecisionLog(activeRoom.gameEngine!.getState().subPhase, `${SUB_PHASE_NAMES[activeRoom.gameEngine!.getState().subPhase] || '建设阶段'}:建造${structName}`);
+
             try {
               activeRoom.gameEngine.build(decision.structureType as any, decision.targetPosition);
             } catch (e) {
               console.error('AI build error:', e);
             }
+            broadcastPowerUpdate();
           }
           break;
         case 'repair':
           if (decision.structureId && decision.amount) {
+            const targetName = getTargetName(decision.structureId, 'defense');
+            broadcastDecisionLog(activeRoom.gameEngine!.getState().subPhase, `${SUB_PHASE_NAMES[activeRoom.gameEngine!.getState().subPhase] || '建设阶段'}:修复${targetName},恢复${decision.amount}点耐久`);
+
             try {
               activeRoom.gameEngine.repair(decision.structureId, decision.amount);
             } catch (e) {
               console.error('AI repair error:', e);
             }
+            broadcastPowerUpdate();
           }
           break;
         case 'endPhase':
           try {
+            const prevTurn = activeRoom.gameEngine!.getState().turn;
             activeRoom.gameEngine.endSubPhase();
+            const afterState = activeRoom.gameEngine!.getState();
+            if (afterState.turn !== prevTurn || afterState.currentFaction !== aiFaction) {
+              const power = calculatePower(afterState);
+              const record: RoundPowerRecord = {
+                turn: prevTurn,
+                attackerPower: power.attackerPower,
+                defenderPower: power.defenderPower,
+              };
+              addRoundPowerRecord(roomId, record);
+              broadcastToRoom(roomId, {
+                type: 'roundSummary',
+                payload: {
+                  roundPowerHistory: getRoundPowerHistory(roomId),
+                },
+              });
+            }
           } catch (e) {
             console.error('AI endSubPhase error:', e);
           }
@@ -500,6 +615,71 @@ export function clearAITimeout(roomId: string): void {
 export function isSinglePlayerRoom(roomId: string): boolean {
   const activeRoom = activeRooms.get(roomId);
   return activeRoom?.isSinglePlayer || false;
+}
+
+export function calculatePower(state: GameState): PowerUpdate {
+  const attackerUnits = state.units.filter(u => u.faction === 'attacker' && u.stats.hp > 0);
+  const attackerUnitPower = attackerUnits.reduce((sum, u) => sum + u.stats.attack, 0);
+
+  const attackerEngines = state.siegeEngines.filter(e => e.faction === 'attacker' && e.stats.hp > 0);
+  const attackerEngineHp = attackerEngines.reduce((sum, e) => sum + e.stats.hp, 0);
+
+  const attackerPower = attackerUnitPower + attackerEngineHp * 0.5;
+
+  const defenderUnits = state.units.filter(u => u.faction === 'defender' && u.stats.hp > 0);
+  const defenderUnitPower = defenderUnits.reduce((sum, u) => sum + u.stats.attack, 0);
+
+  const defenderDefenses = state.defenses.filter(d => d.hp > 0);
+  const defenderDefenseHp = defenderDefenses.reduce((sum, d) => sum + d.hp, 0);
+
+  const arrowTowerCount = defenderDefenses.filter(d => d.type === 'arrowTower').length;
+
+  const defenderPower = defenderUnitPower + defenderDefenseHp * 0.3 + arrowTowerCount * 15;
+
+  return { attackerPower: Math.round(attackerPower * 10) / 10, defenderPower: Math.round(defenderPower * 10) / 10 };
+}
+
+export function switchAIDifficulty(roomId: string, newDifficulty: AIDifficulty): { success: boolean; message?: string } {
+  const activeRoom = activeRooms.get(roomId);
+  if (!activeRoom) {
+    return { success: false, message: 'Room not found' };
+  }
+  if (!activeRoom.isSinglePlayer) {
+    return { success: false, message: 'Not a single player room' };
+  }
+  if (!activeRoom.gameEngine) {
+    return { success: false, message: 'Game not started' };
+  }
+
+  activeRoom.aiDifficulty = newDifficulty;
+
+  const aiFaction = activeRoom.aiEngine?.getFaction();
+  if (aiFaction) {
+    const currentState = activeRoom.gameEngine.getState();
+    activeRoom.aiEngine = new AIEngine(currentState, aiFaction, newDifficulty);
+  }
+
+  return { success: true };
+}
+
+export function getAIDifficulty(roomId: string): AIDifficulty | null {
+  const activeRoom = activeRooms.get(roomId);
+  return activeRoom?.aiDifficulty || null;
+}
+
+export function addRoundPowerRecord(roomId: string, record: RoundPowerRecord): void {
+  const activeRoom = activeRooms.get(roomId);
+  if (activeRoom) {
+    if (!activeRoom.roundPowerHistory) {
+      activeRoom.roundPowerHistory = [];
+    }
+    activeRoom.roundPowerHistory.push(record);
+  }
+}
+
+export function getRoundPowerHistory(roomId: string): RoundPowerRecord[] {
+  const activeRoom = activeRooms.get(roomId);
+  return activeRoom?.roundPowerHistory || [];
 }
 
 export { activeRooms };

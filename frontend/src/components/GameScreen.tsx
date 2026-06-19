@@ -6,6 +6,7 @@ import UnitInfoPanel from './UnitInfoPanel';
 import ChatPanel from './ChatPanel';
 import TurnControl from './TurnControl';
 import UnitRecruitPanel from './UnitRecruitPanel';
+import BattleAnalysisPanel from './BattleAnalysisPanel';
 import type { Unit, SiegeEngine, DefenseStructure, Position, UnitType, Resources } from '../types/game';
 
 interface GameScreenProps {
@@ -256,6 +257,7 @@ function GameScreen(props: GameScreenProps) {
 
   const errorMessage = () => gameWS.errorMessage;
   const isAIThinking = () => gameWS.isAIThinking;
+  const isSinglePlayer = () => gameWS.isSinglePlayer;
 
   return (
     <div style={{
@@ -474,15 +476,16 @@ function GameScreen(props: GameScreenProps) {
         </div>
 
         <div style={{
-          width: '300px',
+          width: isSinglePlayer() ? '320px' : '300px',
           padding: '10px',
           background: 'rgba(26, 26, 46, 0.9)',
           'border-left': '2px solid #3a3a5a',
           display: 'flex',
           'flex-direction': 'column',
           gap: '10px',
+          overflow: 'auto',
         }}>
-          <ChatPanel />
+          {isSinglePlayer() ? <BattleAnalysisPanel /> : <ChatPanel />}
         </div>
       </div>
 

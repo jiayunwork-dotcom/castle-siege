@@ -1,4 +1,4 @@
-import { WSMessage, Position } from '../types/game';
+import { WSMessage, Position, AIDifficulty } from '../types/game';
 import {
   createRoom,
   joinRoom,
@@ -22,6 +22,10 @@ import {
   setAITimeout,
   clearAITimeout,
   isSinglePlayerRoom,
+  switchAIDifficulty,
+  getAIDifficulty,
+  calculatePower,
+  getRoundPowerHistory,
 } from '../managers/roomManager';
 import { saveGameState } from '../redis/gameStore';
 
@@ -76,6 +80,8 @@ export function handleWebSocketMessage(
       return handleCreateSinglePlayerRoom(connection, message);
     case 'startSinglePlayerGame':
       return handleStartSinglePlayerGame(connection, message, roomId, playerId);
+    case 'switchAIDifficulty':
+      return handleSwitchAIDifficulty(connection, message, roomId, playerId);
     default:
       connection.send(JSON.stringify({ type: 'error', payload: { message: 'Unknown message type' } }));
       return {};
@@ -93,6 +99,20 @@ function handleCreateSinglePlayerRoom(connection: any, message: WSMessage): { ro
     type: 'roomCreated',
     payload: { room, playerId: player.id, player, isSinglePlayer: true },
   }));
+
+  const initialPower = calculatePower(gameState);
+  broadcastToRoom(room.id, {
+    type: 'powerUpdate',
+    payload: initialPower,
+  });
+  broadcastToRoom(room.id, {
+    type: 'roundSummary',
+    payload: { roundPowerHistory: getRoundPowerHistory(room.id) },
+  });
+  broadcastToRoom(room.id, {
+    type: 'aiDifficultyInfo',
+    payload: { difficulty: aiDifficulty },
+  });
 
   broadcastToRoom(room.id, {
     type: 'gameStarted',
@@ -123,6 +143,33 @@ function handleStartSinglePlayerGame(connection: any, message: WSMessage, roomId
   });
 
   checkAndStartAITurn(roomId);
+
+  return { roomId, playerId };
+}
+
+function handleSwitchAIDifficulty(connection: any, message: WSMessage, roomId?: string, playerId?: string) {
+  if (!roomId || !playerId) {
+    connection.send(JSON.stringify({ type: 'error', payload: { message: 'Not in a room' } }));
+    return { roomId, playerId };
+  }
+
+  const newDifficulty = message.payload.difficulty as AIDifficulty;
+  if (!newDifficulty || !['easy', 'normal', 'hard'].includes(newDifficulty)) {
+    connection.send(JSON.stringify({ type: 'error', payload: { message: 'Invalid difficulty' } }));
+    return { roomId, playerId };
+  }
+
+  const result = switchAIDifficulty(roomId, newDifficulty);
+  if (!result.success) {
+    connection.send(JSON.stringify({ type: 'error', payload: { message: result.message || 'Failed to switch difficulty' } }));
+    return { roomId, playerId };
+  }
+
+  const DIFFICULTY_NAMES: Record<AIDifficulty, string> = { easy: '简单', normal: '普通', hard: '困难' };
+  broadcastToRoom(roomId, {
+    type: 'aiDifficultyChanged',
+    payload: { difficulty: newDifficulty, difficultyName: DIFFICULTY_NAMES[newDifficulty] },
+  });
 
   return { roomId, playerId };
 }

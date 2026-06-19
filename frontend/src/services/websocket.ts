@@ -1,5 +1,5 @@
 import { createSignal } from 'solid-js';
-import type { GameState, Room, Player, WSMessage, ChatMessage, Faction, Position, BattleReport, AIDifficulty } from '../types/game';
+import type { GameState, Room, Player, WSMessage, ChatMessage, Faction, Position, BattleReport, AIDifficulty, AIDecisionLogEntry, PowerUpdate, RoundPowerRecord } from '../types/game';
 
 class GameWebSocket {
   private ws: WebSocket | null = null;
@@ -15,6 +15,12 @@ class GameWebSocket {
   private _battleReport = createSignal<BattleReport | null>(null);
   private _isAIThinking = createSignal(false);
   private _isSinglePlayer = createSignal(false);
+
+  private _aiDecisionLogs = createSignal<AIDecisionLogEntry[]>([]);
+  private _powerUpdate = createSignal<PowerUpdate | null>(null);
+  private _roundPowerHistory = createSignal<RoundPowerRecord[]>([]);
+  private _aiDifficulty = createSignal<AIDifficulty>('normal');
+  private _aiDifficultyChangeMsg = createSignal<string | null>(null);
 
   private listeners: Map<string, ((data: any) => void)[]> = new Map();
 
@@ -54,6 +60,26 @@ class GameWebSocket {
     return this._isSinglePlayer[0]();
   }
 
+  get aiDecisionLogs() {
+    return this._aiDecisionLogs[0]();
+  }
+
+  get powerUpdate() {
+    return this._powerUpdate[0]();
+  }
+
+  get roundPowerHistory() {
+    return this._roundPowerHistory[0]();
+  }
+
+  get aiDifficulty() {
+    return this._aiDifficulty[0]();
+  }
+
+  get aiDifficultyChangeMsg() {
+    return this._aiDifficultyChangeMsg[0]();
+  }
+
   setGameState = (value: GameState | null) => this._gameState[1](value);
   setRoom = (value: Room | null) => this._room[1](value);
   setPlayer = (value: Player | null) => this._player[1](value);
@@ -63,6 +89,11 @@ class GameWebSocket {
   setBattleReport = (value: BattleReport | null) => this._battleReport[1](value);
   setIsAIThinking = (value: boolean) => this._isAIThinking[1](value);
   setIsSinglePlayer = (value: boolean) => this._isSinglePlayer[1](value);
+  setAiDecisionLogs = (updater: any) => this._aiDecisionLogs[1](updater);
+  setPowerUpdate = (value: PowerUpdate | null) => this._powerUpdate[1](value);
+  setRoundPowerHistory = (value: RoundPowerRecord[]) => this._roundPowerHistory[1](value);
+  setAiDifficulty = (value: AIDifficulty) => this._aiDifficulty[1](value);
+  setAiDifficultyChangeMsg = (value: string | null) => this._aiDifficultyChangeMsg[1](value);
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -199,6 +230,33 @@ class GameWebSocket {
         this.setBattleReport(message.payload.battleReport);
         break;
 
+      case 'aiDecisionLog':
+        this.setAiDecisionLogs((prev: AIDecisionLogEntry[]) => {
+          const updated = [message.payload, ...prev];
+          return updated.slice(0, 30);
+        });
+        break;
+
+      case 'powerUpdate':
+        this.setPowerUpdate(message.payload);
+        break;
+
+      case 'roundSummary':
+        if (message.payload.roundPowerHistory) {
+          this.setRoundPowerHistory(message.payload.roundPowerHistory);
+        }
+        break;
+
+      case 'aiDifficultyInfo':
+        this.setAiDifficulty(message.payload.difficulty);
+        break;
+
+      case 'aiDifficultyChanged':
+        this.setAiDifficulty(message.payload.difficulty);
+        this.setAiDifficultyChangeMsg(`AI难度已切换为${message.payload.difficultyName}`);
+        setTimeout(() => this.setAiDifficultyChangeMsg(null), 3000);
+        break;
+
       case 'error':
         this.setErrorMessage(message.payload.message);
         setTimeout(() => this.setErrorMessage(null), 3000);
@@ -301,6 +359,10 @@ class GameWebSocket {
 
   startSinglePlayerGame(): void {
     this.send('startSinglePlayerGame', {});
+  }
+
+  switchAIDifficulty(difficulty: AIDifficulty): void {
+    this.send('switchAIDifficulty', { difficulty });
   }
 
   disconnect(): void {

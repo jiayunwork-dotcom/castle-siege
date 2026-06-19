@@ -280,3 +280,21 @@ export interface SinglePlayerConfig {
   playerFaction: Faction;
   aiDifficulty: AIDifficulty;
 }
+
+export interface AIDecisionLogEntry {
+  timestamp: number;
+  turn: number;
+  subPhase: TurnSubPhase;
+  description: string;
+}
+
+export interface PowerUpdate {
+  attackerPower: number;
+  defenderPower: number;
+}
+
+export interface RoundPowerRecord {
+  turn: number;
+  attackerPower: number;
+  defenderPower: number;
+}
