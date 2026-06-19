@@ -61,6 +61,7 @@ export class AIEngine {
   private decideMovement(): AIDecision[] {
     const decisions: AIDecision[] = [];
     const myUnits = this.state.units.filter(u => u.faction === this.faction && !u.moved);
+    const myEngines = this.state.siegeEngines.filter(e => e.faction === this.faction && !e.moved && e.stats.hp > 0);
 
     if (this.difficulty === 'easy') {
       for (const unit of myUnits) {
@@ -69,6 +70,16 @@ export class AIEngine {
           decisions.push({
             type: 'move',
             unitId: unit.id,
+            targetPosition: target,
+          });
+        }
+      }
+      for (const engine of myEngines) {
+        const target = this.getRandomValidSiegeMove(engine);
+        if (target) {
+          decisions.push({
+            type: 'move',
+            unitId: engine.id,
             targetPosition: target,
           });
         }
@@ -90,11 +101,45 @@ export class AIEngine {
           });
         }
       }
+
+      if (this.faction === 'attacker') {
+        for (const engine of myEngines) {
+          const target = this.getSiegeEngineMoveTarget(engine);
+          if (target) {
+            decisions.push({
+              type: 'move',
+              unitId: engine.id,
+              targetPosition: target,
+            });
+          }
+        }
+      }
     } else {
       const coordinatedDecisions = this.faction === 'attacker'
         ? this.getHardAttackerMoves(myUnits)
         : this.getHardDefenderMoves(myUnits);
       decisions.push(...coordinatedDecisions);
+
+      if (this.faction === 'attacker') {
+        const orderedEngines = [...myEngines].sort((a, b) => {
+          if (a.type === 'batteringRam' && b.type !== 'batteringRam') return -1;
+          if (b.type === 'batteringRam' && a.type !== 'batteringRam') return 1;
+          if (a.type === 'catapult' && b.type !== 'catapult') return -1;
+          if (b.type === 'catapult' && a.type !== 'catapult') return 1;
+          return 0;
+        });
+        
+        for (const engine of orderedEngines) {
+          const target = this.getSiegeEngineMoveTarget(engine);
+          if (target) {
+            decisions.push({
+              type: 'move',
+              unitId: engine.id,
+              targetPosition: target,
+            });
+          }
+        }
+      }
     }
 
     return decisions;
@@ -184,6 +229,99 @@ export class AIEngine {
     }
 
     return false;
+  }
+
+  private getRandomValidSiegeMove(engine: SiegeEngine): Position | null {
+    const weatherMod = WEATHER_MODIFIERS[this.state.weather].movementSpeed;
+    const maxMove = Math.max(1, Math.floor(engine.stats.speed * weatherMod));
+    const validPositions: Position[] = [];
+
+    for (let dx = -maxMove; dx <= maxMove; dx++) {
+      for (let dy = -maxMove; dy <= maxMove; dy++) {
+        if (dx === 0 && dy === 0) continue;
+        const target = { x: engine.position.x + dx, y: engine.position.y + dy };
+        if (this.isValidSiegeMove(engine, target)) {
+          validPositions.push(target);
+        }
+      }
+    }
+
+    if (validPositions.length === 0) return null;
+    return validPositions[randomInt(0, validPositions.length - 1)];
+  }
+
+  private isValidSiegeMove(engine: SiegeEngine, target: Position): boolean {
+    if (target.x < 0 || target.x >= this.state.config.mapWidth) return false;
+    if (target.y < 0 || target.y >= this.state.config.mapHeight) return false;
+
+    const weatherMod = WEATHER_MODIFIERS[this.state.weather].movementSpeed;
+    const maxMove = Math.max(1, Math.floor(engine.stats.speed * weatherMod));
+
+    const distance = getManhattanDistance(engine.position, target);
+    if (distance > maxMove) return false;
+
+    if (this.isPositionBlocked(target, engine.faction)) return false;
+
+    return true;
+  }
+
+  private getSiegeEngineMoveTarget(engine: SiegeEngine): Position | null {
+    const weatherMod = WEATHER_MODIFIERS[this.state.weather].movementSpeed;
+    const maxMove = Math.max(1, Math.floor(engine.stats.speed * weatherMod));
+
+    const targetWall = { position: this.findWeakestWallPoint() } as DefenseStructure;
+    if (!targetWall) return this.getRandomValidSiegeMove(engine);
+
+    let bestPosition: Position | null = null;
+    let bestScore = -Infinity;
+
+    for (let dx = -maxMove; dx <= maxMove; dx++) {
+      for (let dy = -maxMove; dy <= maxMove; dy++) {
+        if (dx === 0 && dy === 0) continue;
+        const target = { x: engine.position.x + dx, y: engine.position.y + dy };
+        if (!this.isValidSiegeMove(engine, target)) continue;
+
+        let score = 0;
+        const distToWall = getManhattanDistance(target, targetWall.position);
+        score += (20 - distToWall) * 10;
+
+        if (engine.type === 'catapult') {
+          const distToTower = this.getDistanceToNearestTower(target);
+          score += Math.max(0, (10 - distToTower) * 8);
+          if (distToWall <= engine.stats.range) {
+            score += 50;
+          }
+        } else if (engine.type === 'batteringRam') {
+          if (distToWall <= 1) {
+            score += 100;
+          }
+        } else if (engine.type === 'ladder') {
+          if (distToWall <= 1) {
+            score += 80;
+          }
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestPosition = target;
+        }
+      }
+    }
+
+    return bestPosition;
+  }
+
+  private getDistanceToNearestTower(pos: Position): number {
+    let minDist = Infinity;
+    for (const defense of this.state.defenses) {
+      if ((defense.type === 'tower' || defense.type === 'arrowTower') && defense.hp > 0) {
+        const dist = getManhattanDistance(pos, defense.position);
+        if (dist < minDist) {
+          minDist = dist;
+        }
+      }
+    }
+    return minDist;
   }
 
   private getAttackerMoveTarget(unit: Unit): Position | null {

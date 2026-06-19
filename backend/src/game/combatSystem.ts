@@ -1,5 +1,5 @@
 import { GameState, Unit, Position, DefenseStructure, SiegeEngine, Faction } from '../types/game';
-import { getDistance, clamp, randomInt } from '../utils/helpers';
+import { getDistance, getManhattanDistance, clamp, randomInt } from '../utils/helpers';
 import { WEATHER_MODIFIERS, TIME_OF_DAY_MODIFIERS, WALL_DEFENSE_BONUS, UNIT_COUNTERS, SIEGE_ENGINE_STATS, DEFENSE_STATS } from '../constants/gameConfig';
 
 export interface CombatEventCallback {
@@ -75,6 +75,27 @@ export function canMoveUnit(state: GameState, unitId: string, targetPos: Positio
     unit.onWall = !!wallDefense;
     unit.wallSection = wallDefense?.wallSection;
   }
+
+  return { success: true };
+}
+
+export function canMoveSiegeEngine(state: GameState, engineId: string, targetPos: Position): { success: boolean; message?: string } {
+  const engine = state.siegeEngines.find(s => s.id === engineId);
+  if (!engine) return { success: false, message: 'Siege engine not found' };
+  if (engine.moved) return { success: false, message: 'Engine already moved this turn' };
+  if (engine.faction !== state.currentFaction) return { success: false, message: "Not your faction's turn" };
+
+  const weatherMod = WEATHER_MODIFIERS[state.weather].movementSpeed;
+  const maxMove = Math.max(1, Math.floor(engine.stats.speed * weatherMod));
+
+  const distance = getManhattanDistance(engine.position, targetPos);
+  if (distance > maxMove) return { success: false, message: 'Target out of movement range' };
+
+  const tileBlocked = isPositionBlocked(state, targetPos, engine.faction);
+  if (tileBlocked) return { success: false, message: 'Target position is blocked' };
+
+  engine.position = { ...targetPos };
+  engine.moved = true;
 
   return { success: true };
 }

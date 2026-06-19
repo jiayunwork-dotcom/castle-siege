@@ -382,9 +382,15 @@ export function processAITurn(roomId: string): GameState | null {
         case 'move':
           if (decision.unitId && decision.targetPosition) {
             try {
-              activeRoom.gameEngine.moveUnit(decision.unitId, decision.targetPosition, aiFaction);
+              const currentStateForMove = activeRoom.gameEngine!.getState();
+              const isSiegeEngineMove = currentStateForMove.siegeEngines.some(e => e.id === decision.unitId);
+              if (isSiegeEngineMove) {
+                activeRoom.gameEngine.moveSiegeEngine(decision.unitId, decision.targetPosition, aiFaction);
+              } else {
+                activeRoom.gameEngine.moveUnit(decision.unitId, decision.targetPosition, aiFaction);
+              }
             } catch (e) {
-              console.error('AI moveUnit error:', e);
+              console.error('AI move error:', e);
             }
           }
           break;
@@ -439,12 +445,34 @@ export function processAITurn(roomId: string): GameState | null {
   if (iterationCount >= MAX_ITERATIONS) {
     console.warn(`AI turn exceeded max iterations (${MAX_ITERATIONS}), forcing turn advance`);
     try {
-      while (state.currentFaction === aiFaction && state.phase !== 'ended') {
+      let forceCount = 0;
+      const MAX_FORCE_ATTEMPTS = 10;
+      while (state.currentFaction === aiFaction && state.phase !== 'ended' && forceCount < MAX_FORCE_ATTEMPTS) {
         activeRoom.gameEngine.endSubPhase();
         state = activeRoom.gameEngine.getState();
+        forceCount++;
+      }
+      if (forceCount >= MAX_FORCE_ATTEMPTS) {
+        console.error('Force turn advance failed after max attempts, switching faction manually');
+        const currentState = activeRoom.gameEngine.getState();
+        currentState.currentFaction = currentState.currentFaction === 'attacker' ? 'defender' : 'attacker';
+        currentState.subPhase = 'movement';
+        if (currentState.currentFaction === 'attacker') {
+          currentState.turn = Math.min((currentState.turn || 1) + 1, currentState.config.maxTurns);
+        }
       }
     } catch (e) {
       console.error('Force turn advance error:', e);
+      try {
+        const currentState = activeRoom.gameEngine.getState();
+        currentState.currentFaction = currentState.currentFaction === 'attacker' ? 'defender' : 'attacker';
+        currentState.subPhase = 'movement';
+        if (currentState.currentFaction === 'attacker') {
+          currentState.turn = Math.min((currentState.turn || 1) + 1, currentState.config.maxTurns);
+        }
+      } catch (e2) {
+        console.error('Manual faction switch failed:', e2);
+      }
     }
   }
 

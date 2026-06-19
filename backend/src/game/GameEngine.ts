@@ -1,6 +1,6 @@
 import { GameState, Position, MoveAction, AttackAction, BuildAction, RepairAction, BattleReport, Player, Unit, DefenseStructure, SiegeEngine } from '../types/game';
 import { createInitialGameState } from './gameInitializer';
-import { canMoveUnit, canAttackUnit, useSiegeEngine, checkGameEnd, setCombatCallback } from './combatSystem';
+import { canMoveUnit, canMoveSiegeEngine, canAttackUnit, useSiegeEngine, checkGameEnd, setCombatCallback } from './combatSystem';
 import { advanceTurn, processSupplyPhase } from './turnSystem';
 import { buildDefense, repairStructure, upgradeGate, buildSiegeEngine, trainUnit } from './buildingSystem';
 import { SnapshotSystem } from './snapshotSystem';
@@ -50,6 +50,19 @@ export class GameEngine {
     const result = canMoveUnit(this.state, unitId, targetPosition);
     if (result.success && fromPos && unit) {
       this.snapshotSystem.recordMove(unitId, 'unit', fromPos, targetPosition);
+    }
+    return result;
+  }
+
+  moveSiegeEngine(engineId: string, targetPosition: Position, playerFaction: string): { success: boolean; message?: string } {
+    if (this.state.subPhase !== 'movement') {
+      return { success: false, message: 'Not movement phase' };
+    }
+    const engine = this.state.siegeEngines.find(s => s.id === engineId);
+    const fromPos = engine ? { ...engine.position } : null;
+    const result = canMoveSiegeEngine(this.state, engineId, targetPosition);
+    if (result.success && fromPos && engine) {
+      this.snapshotSystem.recordMove(engineId, 'siegeEngine', fromPos, targetPosition);
     }
     return result;
   }
