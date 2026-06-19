@@ -486,30 +486,28 @@ export class AIEngine {
 
   private getAllValidTargets(unit: Unit): Array<{ id: string; type: 'unit' | 'defense' | 'siegeEngine' }> {
     const targets: Array<{ id: string; type: 'unit' | 'defense' | 'siegeEngine' }> = [];
-    const timeMod = 1;
-    const weatherMod = 1;
     let attackRange = unit.stats.range;
 
     if (unit.onWall && unit.type === 'archer') {
       attackRange = Math.floor(attackRange * 1.3);
     }
 
-    if (this.faction === 'attacker') {
-      for (const defense of this.state.defenses) {
-        if (getDistance(unit.position, defense.position) <= attackRange) {
+    for (const defense of this.state.defenses) {
+      if (defense.hp > 0 && getDistance(unit.position, defense.position) <= attackRange) {
+        if (this.faction === 'attacker') {
           targets.push({ id: defense.id, type: 'defense' });
-        }
-      }
-    } else {
-      for (const engine of this.state.siegeEngines) {
-        if (engine.faction !== this.faction && getDistance(unit.position, engine.position) <= attackRange) {
-          targets.push({ id: engine.id, type: 'siegeEngine' });
         }
       }
     }
 
+    for (const engine of this.state.siegeEngines) {
+      if (engine.faction !== this.faction && engine.stats.hp > 0 && getDistance(unit.position, engine.position) <= attackRange) {
+        targets.push({ id: engine.id, type: 'siegeEngine' });
+      }
+    }
+
     for (const enemy of this.state.units) {
-      if (enemy.faction !== this.faction && getDistance(unit.position, enemy.position) <= attackRange) {
+      if (enemy.faction !== this.faction && enemy.stats.hp > 0 && getDistance(unit.position, enemy.position) <= attackRange) {
         targets.push({ id: enemy.id, type: 'unit' });
       }
     }
@@ -655,10 +653,12 @@ export class AIEngine {
   private getBestSiegeAttack(engine: SiegeEngine): AIDecision | null {
     let bestTarget: DefenseStructure | Unit | null = null;
     let bestScore = -Infinity;
+    let bestTargetType: 'defense' | 'unit' = 'defense';
 
     if (this.faction === 'attacker') {
       for (const defense of this.state.defenses) {
         if (getDistance(engine.position, defense.position) > engine.stats.range) continue;
+        if (defense.hp <= 0) continue;
 
         let score = 0;
         const hpRatio = defense.hp / defense.maxHp;
@@ -674,17 +674,67 @@ export class AIEngine {
         if (score > bestScore) {
           bestScore = score;
           bestTarget = defense;
+          bestTargetType = 'defense';
+        }
+      }
+
+      for (const unit of this.state.units) {
+        if (unit.faction === this.faction) continue;
+        if (unit.stats.hp <= 0) continue;
+        if (getDistance(engine.position, unit.position) > engine.stats.range) continue;
+
+        let score = 0;
+        const hpRatio = unit.stats.hp / unit.stats.maxHp;
+        score += (1 - hpRatio) * 60;
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestTarget = unit;
+          bestTargetType = 'unit';
+        }
+      }
+    } else {
+      for (const enemyUnit of this.state.units) {
+        if (enemyUnit.faction === this.faction) continue;
+        if (enemyUnit.stats.hp <= 0) continue;
+        if (getDistance(engine.position, enemyUnit.position) > engine.stats.range) continue;
+
+        let score = 0;
+        const hpRatio = enemyUnit.stats.hp / enemyUnit.stats.maxHp;
+        score += (1 - hpRatio) * 70;
+
+        if (enemyUnit.type === 'sapper') score += 40;
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestTarget = enemyUnit;
+          bestTargetType = 'unit';
+        }
+      }
+
+      for (const enemyEngine of this.state.siegeEngines) {
+        if (enemyEngine.faction === this.faction) continue;
+        if (enemyEngine.stats.hp <= 0) continue;
+        if (getDistance(engine.position, enemyEngine.position) > engine.stats.range) continue;
+
+        let score = 50;
+        const hpRatio = enemyEngine.stats.hp / enemyEngine.stats.maxHp;
+        score += (1 - hpRatio) * 40;
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestTarget = enemyEngine as any;
+          bestTargetType = 'unit';
         }
       }
     }
 
     if (bestTarget) {
-      const targetType = 'hp' in bestTarget && 'maxHp' in bestTarget && !('faction' in bestTarget) ? 'defense' : 'unit';
       return {
         type: 'attack',
         unitId: engine.id,
         targetId: bestTarget.id,
-        targetType: targetType as any,
+        targetType: bestTargetType,
       };
     }
 

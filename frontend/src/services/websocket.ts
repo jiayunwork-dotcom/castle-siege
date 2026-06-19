@@ -163,6 +163,13 @@ class GameWebSocket {
         if (this.room) {
           const updatedRoom = { ...this.room!, gameState: message.payload.gameState };
           this.setRoom(updatedRoom);
+          if (!this.player && localStorage.getItem('playerId')) {
+            const savedPlayerId = localStorage.getItem('playerId');
+            const roomPlayer = updatedRoom.players.find((p: any) => p.id === savedPlayerId);
+            if (roomPlayer) {
+              this.setPlayer(roomPlayer);
+            }
+          }
         }
         break;
 

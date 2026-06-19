@@ -365,8 +365,11 @@ export function processAITurn(roomId: string): GameState | null {
 
   let state = activeRoom.gameEngine.getState();
   const aiFaction = activeRoom.aiEngine.getFaction();
+  let iterationCount = 0;
+  const MAX_ITERATIONS = 20;
 
-  while (state.currentFaction === aiFaction && state.phase !== 'ended') {
+  while (state.currentFaction === aiFaction && state.phase !== 'ended' && iterationCount < MAX_ITERATIONS) {
+    iterationCount++;
     activeRoom.aiEngine.updateState(state);
     const decisions = activeRoom.aiEngine.makeDecisions();
 
@@ -378,38 +381,71 @@ export function processAITurn(roomId: string): GameState | null {
       switch (decision.type) {
         case 'move':
           if (decision.unitId && decision.targetPosition) {
-            activeRoom.gameEngine.moveUnit(decision.unitId, decision.targetPosition, aiFaction);
+            try {
+              activeRoom.gameEngine.moveUnit(decision.unitId, decision.targetPosition, aiFaction);
+            } catch (e) {
+              console.error('AI moveUnit error:', e);
+            }
           }
           break;
         case 'attack':
           if (decision.unitId && decision.targetId && decision.targetType) {
-            const isSiegeEngine = state.siegeEngines.some(e => e.id === decision.unitId);
-            if (isSiegeEngine) {
-              if (decision.targetType === 'defense' || decision.targetType === 'unit') {
-                activeRoom.gameEngine.siegeAttack(decision.unitId, decision.targetId, decision.targetType as any, aiFaction);
+            try {
+              const currentStateForCheck = activeRoom.gameEngine!.getState();
+              const isSiegeEngine = currentStateForCheck.siegeEngines.some(e => e.id === decision.unitId);
+              if (isSiegeEngine) {
+                if (decision.targetType === 'defense' || decision.targetType === 'unit') {
+                  activeRoom.gameEngine.siegeAttack(decision.unitId, decision.targetId, decision.targetType as any, aiFaction);
+                }
+              } else {
+                activeRoom.gameEngine.attackUnit(decision.unitId, decision.targetId, decision.targetType, aiFaction);
               }
-            } else {
-              activeRoom.gameEngine.attackUnit(decision.unitId, decision.targetId, decision.targetType, aiFaction);
+            } catch (e) {
+              console.error('AI attack error:', e);
             }
           }
           break;
         case 'build':
           if (decision.structureType && decision.targetPosition) {
-            activeRoom.gameEngine.build(decision.structureType as any, decision.targetPosition);
+            try {
+              activeRoom.gameEngine.build(decision.structureType as any, decision.targetPosition);
+            } catch (e) {
+              console.error('AI build error:', e);
+            }
           }
           break;
         case 'repair':
           if (decision.structureId && decision.amount) {
-            activeRoom.gameEngine.repair(decision.structureId, decision.amount);
+            try {
+              activeRoom.gameEngine.repair(decision.structureId, decision.amount);
+            } catch (e) {
+              console.error('AI repair error:', e);
+            }
           }
           break;
         case 'endPhase':
-          activeRoom.gameEngine.endSubPhase();
+          try {
+            activeRoom.gameEngine.endSubPhase();
+          } catch (e) {
+            console.error('AI endSubPhase error:', e);
+          }
           break;
       }
     }
 
     state = activeRoom.gameEngine.getState();
+  }
+
+  if (iterationCount >= MAX_ITERATIONS) {
+    console.warn(`AI turn exceeded max iterations (${MAX_ITERATIONS}), forcing turn advance`);
+    try {
+      while (state.currentFaction === aiFaction && state.phase !== 'ended') {
+        activeRoom.gameEngine.endSubPhase();
+        state = activeRoom.gameEngine.getState();
+      }
+    } catch (e) {
+      console.error('Force turn advance error:', e);
+    }
   }
 
   const newState = activeRoom.gameEngine.getState();
