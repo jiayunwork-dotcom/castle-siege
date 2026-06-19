@@ -1,99 +1,70 @@
 import { createSignal } from 'solid-js';
 import type { GameState, Room, Player, WSMessage, ChatMessage, Faction, Position, BattleReport, AIDifficulty, AIDecisionLogEntry, PowerUpdate, RoundPowerRecord } from '../types/game';
 
+export const [gameState, setGameState] = createSignal<GameState | null>(null);
+export const [room, setRoom] = createSignal<Room | null>(null);
+export const [player, setPlayer] = createSignal<Player | null>(null);
+export const [isConnected, setIsConnected] = createSignal(false);
+export const [chatMessages, setChatMessages] = createSignal<ChatMessage[]>([]);
+export const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
+export const [battleReport, setBattleReport] = createSignal<BattleReport | null>(null);
+export const [isAIThinking, setIsAIThinking] = createSignal(false);
+export const [isSinglePlayer, setIsSinglePlayer] = createSignal(false);
+
+export const [aiDecisionLogs, setAiDecisionLogs] = createSignal<AIDecisionLogEntry[]>([]);
+export const [powerUpdate, setPowerUpdate] = createSignal<PowerUpdate | null>(null);
+export const [roundPowerHistory, setRoundPowerHistory] = createSignal<RoundPowerRecord[]>([]);
+export const [aiDifficulty, setAiDifficulty] = createSignal<AIDifficulty>('normal');
+export const [aiDifficultyChangeMsg, setAiDifficultyChangeMsg] = createSignal<string | null>(null);
+
 class GameWebSocket {
   private ws: WebSocket | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
 
-  private _gameState = createSignal<GameState | null>(null);
-  private _room = createSignal<Room | null>(null);
-  private _player = createSignal<Player | null>(null);
-  private _isConnected = createSignal(false);
-  private _chatMessages = createSignal<ChatMessage[]>([]);
-  private _errorMessage = createSignal<string | null>(null);
-  private _battleReport = createSignal<BattleReport | null>(null);
-  private _isAIThinking = createSignal(false);
-  private _isSinglePlayer = createSignal(false);
-
-  private _aiDecisionLogs = createSignal<AIDecisionLogEntry[]>([]);
-  private _powerUpdate = createSignal<PowerUpdate | null>(null);
-  private _roundPowerHistory = createSignal<RoundPowerRecord[]>([]);
-  private _aiDifficulty = createSignal<AIDifficulty>('normal');
-  private _aiDifficultyChangeMsg = createSignal<string | null>(null);
-
   private listeners: Map<string, ((data: any) => void)[]> = new Map();
 
-  get gameState() {
-    return this._gameState[0]();
-  }
+  get gameState(): GameState | null { return null as any; }
+  setGameState!: (v: GameState | null) => void;
 
-  get room() {
-    return this._room[0]();
-  }
+  get room(): Room | null { return null as any; }
+  setRoom!: (v: Room | null) => void;
 
-  get player() {
-    return this._player[0]();
-  }
+  get player(): Player | null { return null as any; }
+  setPlayer!: (v: Player | null) => void;
 
-  get isConnected() {
-    return this._isConnected[0]();
-  }
+  get isConnected(): boolean { return false as any; }
+  setIsConnected!: (v: boolean) => void;
 
-  get chatMessages() {
-    return this._chatMessages[0]();
-  }
+  get chatMessages(): ChatMessage[] { return [] as any; }
+  setChatMessages!: (updater: any) => void;
 
-  get errorMessage() {
-    return this._errorMessage[0]();
-  }
+  get errorMessage(): string | null { return null as any; }
+  setErrorMessage!: (v: string | null) => void;
 
-  get battleReport() {
-    return this._battleReport[0]();
-  }
+  get battleReport(): BattleReport | null { return null as any; }
+  setBattleReport!: (v: BattleReport | null) => void;
 
-  get isAIThinking() {
-    return this._isAIThinking[0]();
-  }
+  get isAIThinking(): boolean { return false as any; }
+  setIsAIThinking!: (v: boolean) => void;
 
-  get isSinglePlayer() {
-    return this._isSinglePlayer[0]();
-  }
+  get isSinglePlayer(): boolean { return false as any; }
+  setIsSinglePlayer!: (v: boolean) => void;
 
-  get aiDecisionLogs() {
-    return this._aiDecisionLogs[0]();
-  }
+  get aiDecisionLogs(): AIDecisionLogEntry[] { return [] as any; }
+  setAiDecisionLogs!: (updater: any) => void;
 
-  get powerUpdate() {
-    return this._powerUpdate[0]();
-  }
+  get powerUpdate(): PowerUpdate | null { return null as any; }
+  setPowerUpdate!: (v: PowerUpdate | null) => void;
 
-  get roundPowerHistory() {
-    return this._roundPowerHistory[0]();
-  }
+  get roundPowerHistory(): RoundPowerRecord[] { return [] as any; }
+  setRoundPowerHistory!: (v: RoundPowerRecord[]) => void;
 
-  get aiDifficulty() {
-    return this._aiDifficulty[0]();
-  }
+  get aiDifficulty(): AIDifficulty { return 'normal' as any; }
+  setAiDifficulty!: (v: AIDifficulty) => void;
 
-  get aiDifficultyChangeMsg() {
-    return this._aiDifficultyChangeMsg[0]();
-  }
-
-  setGameState = (value: GameState | null) => this._gameState[1](value);
-  setRoom = (value: Room | null) => this._room[1](value);
-  setPlayer = (value: Player | null) => this._player[1](value);
-  setIsConnected = (value: boolean) => this._isConnected[1](value);
-  setChatMessages = (updater: any) => this._chatMessages[1](updater);
-  setErrorMessage = (value: string | null) => this._errorMessage[1](value);
-  setBattleReport = (value: BattleReport | null) => this._battleReport[1](value);
-  setIsAIThinking = (value: boolean) => this._isAIThinking[1](value);
-  setIsSinglePlayer = (value: boolean) => this._isSinglePlayer[1](value);
-  setAiDecisionLogs = (updater: any) => this._aiDecisionLogs[1](updater);
-  setPowerUpdate = (value: PowerUpdate | null) => this._powerUpdate[1](value);
-  setRoundPowerHistory = (value: RoundPowerRecord[]) => this._roundPowerHistory[1](value);
-  setAiDifficulty = (value: AIDifficulty) => this._aiDifficulty[1](value);
-  setAiDifficultyChangeMsg = (value: string | null) => this._aiDifficultyChangeMsg[1](value);
+  get aiDifficultyChangeMsg(): string | null { return null as any; }
+  setAiDifficultyChangeMsg!: (v: string | null) => void;
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -106,7 +77,7 @@ class GameWebSocket {
 
       this.ws.onopen = () => {
         console.log('WebSocket connected');
-        this.setIsConnected(true);
+        setIsConnected(true);
         this.reconnectAttempts = 0;
         resolve();
       };
@@ -127,7 +98,7 @@ class GameWebSocket {
 
       this.ws.onclose = () => {
         console.log('WebSocket disconnected');
-        this.setIsConnected(false);
+        setIsConnected(false);
         this.attemptReconnect();
       };
     });
@@ -149,117 +120,117 @@ class GameWebSocket {
     switch (message.type) {
       case 'roomCreated':
       case 'roomJoined':
-        this.setRoom(message.payload.room);
-        this.setPlayer(message.payload.player);
+        setRoom(message.payload.room);
+        setPlayer(message.payload.player);
         if (message.payload.isSinglePlayer) {
-          this.setIsSinglePlayer(true);
+          setIsSinglePlayer(true);
         }
         localStorage.setItem('playerId', message.payload.playerId);
         localStorage.setItem('roomId', message.payload.room.id);
         break;
 
       case 'roomUpdated':
-        this.setRoom(message.payload.room);
-        if (this.player && message.payload.room) {
+        setRoom(message.payload.room);
+        if (player() && message.payload.room) {
           const updatedPlayer = message.payload.room.players.find(
-            (p: any) => p.id === this.player!.id
+            (p: any) => p.id === player()!.id
           );
           if (updatedPlayer) {
-            this.setPlayer(updatedPlayer);
+            setPlayer(updatedPlayer);
           }
         }
         break;
 
       case 'playerJoined':
-        if (this.room) {
-          const updatedRoom = { ...this.room! };
+        if (room()) {
+          const updatedRoom = { ...room()! };
           updatedRoom.players = [...updatedRoom.players, message.payload.player];
-          this.setRoom(updatedRoom);
+          setRoom(updatedRoom);
         }
         break;
 
       case 'playerLeft':
-        if (this.room) {
-          const updatedRoom = { ...this.room! };
+        if (room()) {
+          const updatedRoom = { ...room()! };
           updatedRoom.players = updatedRoom.players.filter(p => p.id !== message.payload.playerId);
-          this.setRoom(updatedRoom);
+          setRoom(updatedRoom);
         }
         break;
 
       case 'gameStarted':
-        this.setGameState(message.payload.gameState);
+        setGameState(message.payload.gameState);
         if (message.payload.isSinglePlayer) {
-          this.setIsSinglePlayer(true);
+          setIsSinglePlayer(true);
         }
-        if (this.room) {
-          const updatedRoom = { ...this.room!, gameState: message.payload.gameState };
-          this.setRoom(updatedRoom);
-          if (!this.player && localStorage.getItem('playerId')) {
+        if (room()) {
+          const updatedRoom = { ...room()!, gameState: message.payload.gameState };
+          setRoom(updatedRoom);
+          if (!player() && localStorage.getItem('playerId')) {
             const savedPlayerId = localStorage.getItem('playerId');
             const roomPlayer = updatedRoom.players.find((p: any) => p.id === savedPlayerId);
             if (roomPlayer) {
-              this.setPlayer(roomPlayer);
+              setPlayer(roomPlayer);
             }
           }
         }
         break;
 
       case 'aiThinking':
-        this.setIsAIThinking(message.payload.thinking);
+        setIsAIThinking(message.payload.thinking);
         break;
 
       case 'gameStateUpdate':
       case 'turnAdvanced':
-        this.setGameState(message.payload.gameState);
+        setGameState(message.payload.gameState);
         break;
 
       case 'gameState':
-        this.setGameState(message.payload.gameState);
+        setGameState(message.payload.gameState);
         break;
 
       case 'chatMessage':
-        this.setChatMessages((prev: ChatMessage[]) => [...prev, message.payload]);
+        setChatMessages((prev: ChatMessage[]) => [...prev, message.payload]);
         break;
 
       case 'actionFailed':
-        this.setErrorMessage(message.payload.message);
-        setTimeout(() => this.setErrorMessage(null), 3000);
+        setErrorMessage(message.payload.message);
+        setTimeout(() => setErrorMessage(null), 3000);
         break;
 
       case 'battleReport':
-        this.setBattleReport(message.payload.battleReport);
+        setBattleReport(message.payload.battleReport);
         break;
 
       case 'aiDecisionLog':
-        this.setAiDecisionLogs((prev: AIDecisionLogEntry[]) => {
+        setAiDecisionLogs((prev: AIDecisionLogEntry[]) => {
           const updated = [message.payload, ...prev];
           return updated.slice(0, 30);
         });
         break;
 
       case 'powerUpdate':
-        this.setPowerUpdate(message.payload);
+        setPowerUpdate(message.payload);
         break;
 
       case 'roundSummary':
         if (message.payload.roundPowerHistory) {
-          this.setRoundPowerHistory(message.payload.roundPowerHistory);
+          setRoundPowerHistory(message.payload.roundPowerHistory);
         }
         break;
 
       case 'aiDifficultyInfo':
-        this.setAiDifficulty(message.payload.difficulty);
+        setAiDifficulty(message.payload.difficulty);
         break;
 
       case 'aiDifficultyChanged':
-        this.setAiDifficulty(message.payload.difficulty);
-        this.setAiDifficultyChangeMsg(`AI难度已切换为${message.payload.difficultyName}`);
-        setTimeout(() => this.setAiDifficultyChangeMsg(null), 3000);
+        setAiDifficulty(message.payload.difficulty);
+        setAiDifficultyChangeMsg(`AI难度已切换为${message.payload.difficultyName}`);
+        setTimeout(() => setAiDifficultyChangeMsg(null), 3000);
         break;
 
       case 'error':
-        this.setErrorMessage(message.payload.message);
-        setTimeout(() => this.setErrorMessage(null), 3000);
+        setErrorMessage(message.payload.message);
+        setTimeout(() => setErrorMessage(null), 3000);
         break;
     }
 
@@ -370,9 +341,39 @@ class GameWebSocket {
       this.ws.close();
       this.ws = null;
     }
-    this.setIsSinglePlayer(false);
-    this.setIsAIThinking(false);
+    setIsSinglePlayer(false);
+    setIsAIThinking(false);
   }
 }
 
 export const gameWS = new GameWebSocket();
+
+Object.defineProperty(gameWS, 'gameState', { get: () => gameState() });
+Object.defineProperty(gameWS, 'room', { get: () => room() });
+Object.defineProperty(gameWS, 'player', { get: () => player() });
+Object.defineProperty(gameWS, 'isConnected', { get: () => isConnected() });
+Object.defineProperty(gameWS, 'chatMessages', { get: () => chatMessages() });
+Object.defineProperty(gameWS, 'errorMessage', { get: () => errorMessage() });
+Object.defineProperty(gameWS, 'battleReport', { get: () => battleReport() });
+Object.defineProperty(gameWS, 'isAIThinking', { get: () => isAIThinking() });
+Object.defineProperty(gameWS, 'isSinglePlayer', { get: () => isSinglePlayer() });
+Object.defineProperty(gameWS, 'aiDecisionLogs', { get: () => aiDecisionLogs() });
+Object.defineProperty(gameWS, 'powerUpdate', { get: () => powerUpdate() });
+Object.defineProperty(gameWS, 'roundPowerHistory', { get: () => roundPowerHistory() });
+Object.defineProperty(gameWS, 'aiDifficulty', { get: () => aiDifficulty() });
+Object.defineProperty(gameWS, 'aiDifficultyChangeMsg', { get: () => aiDifficultyChangeMsg() });
+
+gameWS.setGameState = setGameState;
+gameWS.setRoom = setRoom;
+gameWS.setPlayer = setPlayer;
+gameWS.setIsConnected = setIsConnected;
+gameWS.setChatMessages = setChatMessages as any;
+gameWS.setErrorMessage = setErrorMessage;
+gameWS.setBattleReport = setBattleReport;
+gameWS.setIsAIThinking = setIsAIThinking;
+gameWS.setIsSinglePlayer = setIsSinglePlayer;
+gameWS.setAiDecisionLogs = setAiDecisionLogs as any;
+gameWS.setPowerUpdate = setPowerUpdate;
+gameWS.setRoundPowerHistory = setRoundPowerHistory;
+gameWS.setAiDifficulty = setAiDifficulty;
+gameWS.setAiDifficultyChangeMsg = setAiDifficultyChangeMsg;

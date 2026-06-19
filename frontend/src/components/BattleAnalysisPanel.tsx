@@ -1,6 +1,31 @@
-import { createSignal, createEffect, onMount, onCleanup, For, Show } from 'solid-js';
-import { gameWS } from '../services/websocket';
-import type { AIDifficulty, AIDecisionLogEntry, RoundPowerRecord } from '../types/game';
+import { createSignal, createEffect, createMemo, onMount, onCleanup, For, Show } from 'solid-js';
+import { gameWS, powerUpdate, aiDecisionLogs, roundPowerHistory, aiDifficulty, aiDifficultyChangeMsg, gameState } from '../services/websocket';
+import type { AIDifficulty, AIDecisionLogEntry, RoundPowerRecord, PowerUpdate } from '../types/game';
+
+function computePowerFromState(state: any): PowerUpdate | null {
+  if (!state) return null;
+  try {
+    const attackerUnits = state.units?.filter((u: any) => u.faction === 'attacker' && u.stats?.hp > 0) || [];
+    const attackerUnitPower = attackerUnits.reduce((sum: number, u: any) => sum + (u.stats?.attack || 0), 0);
+    const attackerEngines = state.siegeEngines?.filter((e: any) => e.faction === 'attacker' && e.stats?.hp > 0) || [];
+    const attackerEngineHp = attackerEngines.reduce((sum: number, e: any) => sum + (e.stats?.hp || 0), 0);
+    const attackerPower = attackerUnitPower + attackerEngineHp * 0.5;
+
+    const defenderUnits = state.units?.filter((u: any) => u.faction === 'defender' && u.stats?.hp > 0) || [];
+    const defenderUnitPower = defenderUnits.reduce((sum: number, u: any) => sum + (u.stats?.attack || 0), 0);
+    const defenderDefenses = state.defenses?.filter((d: any) => d.hp > 0) || [];
+    const defenderDefenseHp = defenderDefenses.reduce((sum: number, d: any) => sum + (d.hp || 0), 0);
+    const arrowTowerCount = defenderDefenses.filter((d: any) => d.type === 'arrowTower').length;
+    const defenderPower = defenderUnitPower + defenderDefenseHp * 0.3 + arrowTowerCount * 15;
+
+    return {
+      attackerPower: Math.round(attackerPower * 10) / 10,
+      defenderPower: Math.round(defenderPower * 10) / 10,
+    };
+  } catch {
+    return null;
+  }
+}
 
 function BattleAnalysisPanel() {
   let logContainer: HTMLDivElement | undefined;
@@ -9,8 +34,14 @@ function BattleAnalysisPanel() {
 
   const [tooltipInfo, setTooltipInfo] = createSignal<{ x: number; y: number; turn: number; attacker: number; defender: number } | null>(null);
 
+  const effectivePower = createMemo<PowerUpdate | null>(() => {
+    const wsPower = powerUpdate();
+    if (wsPower) return wsPower;
+    return computePowerFromState(gameState());
+  });
+
   const attackerPercent = () => {
-    const p = gameWS.powerUpdate;
+    const p = effectivePower();
     if (!p || (p.attackerPower === 0 && p.defenderPower === 0)) return 50;
     const total = p.attackerPower + p.defenderPower;
     return Math.round((p.attackerPower / total) * 100);
@@ -36,7 +67,7 @@ function BattleAnalysisPanel() {
     const canvas = chartCanvas;
     if (!canvas || !chartContainer) return;
 
-    const history = gameWS.roundPowerHistory;
+    const history = roundPowerHistory();
     if (!history || history.length === 0) return;
 
     const ctx = canvas.getContext('2d');
@@ -190,6 +221,7 @@ function BattleAnalysisPanel() {
     setTimeout(drawChart, 50);
     setTimeout(drawChart, 200);
     setTimeout(drawChart, 500);
+    setTimeout(drawChart, 1000);
 
     if (chartContainer && 'ResizeObserver' in window) {
       resizeObserver = new ResizeObserver(() => {
@@ -206,18 +238,23 @@ function BattleAnalysisPanel() {
   });
 
   createEffect(() => {
-    gameWS.roundPowerHistory;
+    roundPowerHistory();
     setTimeout(drawChart, 10);
   });
 
   createEffect(() => {
-    const logs = gameWS.aiDecisionLogs;
+    gameState();
+    setTimeout(drawChart, 10);
+  });
+
+  createEffect(() => {
+    const logs = aiDecisionLogs();
     if (logContainer && logs && logs.length > 0) {
       logContainer.scrollTop = 0;
     }
   });
 
-  const logs = () => gameWS.aiDecisionLogs;
+  const logs = () => aiDecisionLogs();
 
   return (
     <div style={{
@@ -240,7 +277,7 @@ function BattleAnalysisPanel() {
       }}>
         <span style={{ color: '#a0a0c0', 'font-weight': 'bold' }}>AI难度</span>
         <select
-          value={gameWS.aiDifficulty}
+          value={aiDifficulty()}
           onChange={handleDifficultyChange}
           style={{
             padding: '4px 8px',
@@ -258,7 +295,7 @@ function BattleAnalysisPanel() {
         </select>
       </div>
 
-      <Show when={gameWS.aiDifficultyChangeMsg}>
+      <Show when={aiDifficultyChangeMsg()}>
         <div style={{
           padding: '6px 10px',
           background: 'rgba(78, 205, 196, 0.15)',
@@ -270,7 +307,7 @@ function BattleAnalysisPanel() {
           'font-size': '12px',
           'flex-shrink': 0,
         }}>
-          {gameWS.aiDifficultyChangeMsg}
+          {aiDifficultyChangeMsg()}
         </div>
       </Show>
 
@@ -312,9 +349,9 @@ function BattleAnalysisPanel() {
           <span style={{ color: '#4ecdc4', 'font-size': '11px', 'min-width': '28px', 'text-align': 'right' }}>守方</span>
         </div>
         <div style={{ display: 'flex', 'justify-content': 'space-between', 'font-size': '11px' }}>
-          <span style={{ color: '#e94560' }}>{gameWS.powerUpdate?.attackerPower?.toFixed(1) ?? '0'}</span>
+          <span style={{ color: '#e94560' }}>{effectivePower()?.attackerPower?.toFixed(1) ?? '0'}</span>
           <span style={{ color: '#a0a0c0' }}>{attackerPercent()}% vs {100 - attackerPercent()}%</span>
-          <span style={{ color: '#4ecdc4' }}>{gameWS.powerUpdate?.defenderPower?.toFixed(1) ?? '0'}</span>
+          <span style={{ color: '#4ecdc4' }}>{effectivePower()?.defenderPower?.toFixed(1) ?? '0'}</span>
         </div>
       </div>
 
