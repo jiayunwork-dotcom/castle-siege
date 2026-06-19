@@ -86,13 +86,20 @@ function handleCreateSinglePlayerRoom(connection: any, message: WSMessage): { ro
   const { playerName, playerFaction, aiDifficulty } = message.payload;
   const result = createSinglePlayerRoom({ playerName, playerFaction, aiDifficulty });
 
-  const { room, player } = result;
+  const { room, player, gameState } = result as any;
   registerPlayerSocket(room.id, player.id, connection);
 
   connection.send(JSON.stringify({
     type: 'roomCreated',
     payload: { room, playerId: player.id, player, isSinglePlayer: true },
   }));
+
+  broadcastToRoom(room.id, {
+    type: 'gameStarted',
+    payload: { gameState, isSinglePlayer: true },
+  });
+
+  setTimeout(() => checkAndStartAITurn(room.id), 300);
 
   return { roomId: room.id, playerId: player.id };
 }

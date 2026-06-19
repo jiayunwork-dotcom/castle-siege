@@ -243,7 +243,7 @@ export async function getBattleReportAsync(roomId: string): Promise<BattleReport
   return await getBattleReportFromStore(roomId);
 }
 
-export function createSinglePlayerRoom(config: SinglePlayerConfig): { room: Room; player: Player } {
+export function createSinglePlayerRoom(config: SinglePlayerConfig): { room: Room; player: Player; gameState: GameState } {
   const roomId = generateId();
   const playerId = generateId();
   const aiPlayerId = generateId();
@@ -276,16 +276,27 @@ export function createSinglePlayerRoom(config: SinglePlayerConfig): { room: Room
     maxPlayers: 2,
   };
 
-  activeRooms.set(roomId, {
+  const activeRoomEntry: any = {
     room,
     playerSockets: new Map(),
     isSinglePlayer: true,
     aiDifficulty: config.aiDifficulty,
-  });
+  };
+
+  activeRooms.set(roomId, activeRoomEntry);
+
+  const gameEngine = new GameEngine(roomId);
+  gameEngine.setPlayers([player, aiPlayer]);
+  const gameState = gameEngine.startGame();
+
+  activeRoomEntry.aiEngine = new AIEngine(gameState, aiFaction, config.aiDifficulty);
+  activeRoomEntry.gameEngine = gameEngine;
+  room.gameState = gameState;
 
   saveRoom(room).catch(console.error);
+  saveGameState(roomId, gameState).catch(console.error);
 
-  return { room, player };
+  return { room, player, gameState };
 }
 
 export function startSinglePlayerGame(roomId: string, hostPlayerId: string): { gameState: GameState } | { error: string } {
@@ -352,52 +363,53 @@ export function processAITurn(roomId: string): GameState | null {
   const activeRoom = activeRooms.get(roomId);
   if (!activeRoom || !activeRoom.gameEngine || !activeRoom.aiEngine) return null;
 
-  const state = activeRoom.gameEngine.getState();
-  if (state.phase === 'ended') return state;
+  let state = activeRoom.gameEngine.getState();
+  const aiFaction = activeRoom.aiEngine.getFaction();
 
-  activeRoom.aiEngine.updateState(state);
-  const decisions = activeRoom.aiEngine.makeDecisions();
+  while (state.currentFaction === aiFaction && state.phase !== 'ended') {
+    activeRoom.aiEngine.updateState(state);
+    const decisions = activeRoom.aiEngine.makeDecisions();
 
-  for (const decision of decisions) {
-    const currentState = activeRoom.gameEngine!.getState();
-    if (currentState.phase === 'ended') break;
+    for (const decision of decisions) {
+      const currentState = activeRoom.gameEngine!.getState();
+      if (currentState.phase === 'ended') break;
+      if (currentState.currentFaction !== aiFaction) break;
 
-    switch (decision.type) {
-      case 'move':
-        if (decision.unitId && decision.targetPosition) {
-          const engine = state.units.some(u => u.id === decision.unitId && u.type.includes('siege'));
-          if (engine) {
-          } else {
-            activeRoom.gameEngine.moveUnit(decision.unitId, decision.targetPosition, activeRoom.aiEngine.getFaction());
+      switch (decision.type) {
+        case 'move':
+          if (decision.unitId && decision.targetPosition) {
+            activeRoom.gameEngine.moveUnit(decision.unitId, decision.targetPosition, aiFaction);
           }
-        }
-        break;
-      case 'attack':
-        if (decision.unitId && decision.targetId && decision.targetType) {
-          const isSiegeEngine = state.siegeEngines.some(e => e.id === decision.unitId);
-          if (isSiegeEngine) {
-            if (decision.targetType === 'defense' || decision.targetType === 'unit') {
-              activeRoom.gameEngine.siegeAttack(decision.unitId, decision.targetId, decision.targetType as any, activeRoom.aiEngine.getFaction());
+          break;
+        case 'attack':
+          if (decision.unitId && decision.targetId && decision.targetType) {
+            const isSiegeEngine = state.siegeEngines.some(e => e.id === decision.unitId);
+            if (isSiegeEngine) {
+              if (decision.targetType === 'defense' || decision.targetType === 'unit') {
+                activeRoom.gameEngine.siegeAttack(decision.unitId, decision.targetId, decision.targetType as any, aiFaction);
+              }
+            } else {
+              activeRoom.gameEngine.attackUnit(decision.unitId, decision.targetId, decision.targetType, aiFaction);
             }
-          } else {
-            activeRoom.gameEngine.attackUnit(decision.unitId, decision.targetId, decision.targetType, activeRoom.aiEngine.getFaction());
           }
-        }
-        break;
-      case 'build':
-        if (decision.structureType && decision.targetPosition) {
-          activeRoom.gameEngine.build(decision.structureType as any, decision.targetPosition);
-        }
-        break;
-      case 'repair':
-        if (decision.structureId && decision.amount) {
-          activeRoom.gameEngine.repair(decision.structureId, decision.amount);
-        }
-        break;
-      case 'endPhase':
-        activeRoom.gameEngine.endSubPhase();
-        break;
+          break;
+        case 'build':
+          if (decision.structureType && decision.targetPosition) {
+            activeRoom.gameEngine.build(decision.structureType as any, decision.targetPosition);
+          }
+          break;
+        case 'repair':
+          if (decision.structureId && decision.amount) {
+            activeRoom.gameEngine.repair(decision.structureId, decision.amount);
+          }
+          break;
+        case 'endPhase':
+          activeRoom.gameEngine.endSubPhase();
+          break;
+      }
     }
+
+    state = activeRoom.gameEngine.getState();
   }
 
   const newState = activeRoom.gameEngine.getState();

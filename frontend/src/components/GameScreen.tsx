@@ -338,6 +338,7 @@ function GameScreen(props: GameScreenProps) {
             selectedUnitType={selectedUnitType()}
             onSelectUnitType={handleSelectUnitType}
             resources={playerResources()}
+            isAIThinking={isAIThinking()}
           />
 
           <UnitInfoPanel
@@ -354,6 +355,7 @@ function GameScreen(props: GameScreenProps) {
             onEndPhase={handleEndSubPhase}
             isMyTurn={isMyTurn()}
             currentSubPhase={gameState()?.subPhase || 'movement'}
+            isAIThinking={isAIThinking()}
           />
         </div>
 

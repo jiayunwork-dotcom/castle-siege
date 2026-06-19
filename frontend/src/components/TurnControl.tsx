@@ -2,6 +2,7 @@ interface TurnControlProps {
   onEndPhase: () => void;
   isMyTurn: boolean;
   currentSubPhase: string;
+  isAIThinking?: boolean;
 }
 
 const subPhaseNames: Record<string, string> = {
@@ -47,15 +48,15 @@ function TurnControl(props: TurnControlProps) {
           width: '100%',
           padding: '12px',
           'font-size': '1rem',
-          background: props.isMyTurn ? '#e94560' : '#555',
+          background: props.isAIThinking ? '#9b59b6' : props.isMyTurn ? '#e94560' : '#555',
         }}
       >
-        {props.isMyTurn ? '⏭️ 结束阶段' : '等待对方行动...'}
+        {props.isAIThinking ? '🤖 AI思考中...' : props.isMyTurn ? '⏭️ 结束阶段' : '等待对方行动...'}
       </button>
 
       {!props.isMyTurn && (
-        <p style={{ 'margin-top': '8px', 'text-align': 'center', 'font-size': '0.8rem', color: '#888' }}>
-          轮到对方回合
+        <p style={{ 'margin-top': '8px', 'text-align': 'center', 'font-size': '0.8rem', color: props.isAIThinking ? '#9b59b6' : '#888' }}>
+          {props.isAIThinking ? '请稍候，AI正在决策' : '轮到对方回合'}
         </p>
       )}
     </div>

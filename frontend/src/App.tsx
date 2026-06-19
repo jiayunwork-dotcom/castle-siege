@@ -26,10 +26,11 @@ function App() {
   createEffect(() => {
     const room = gameWS.room;
     const gameState = gameWS.gameState;
+    const isSinglePlayer = gameWS.isSinglePlayer;
 
     if (gameState && currentScreen() !== 'game' && currentScreen() !== 'battleReport') {
       setCurrentScreen('game');
-    } else if (room && !gameState && currentScreen() !== 'room') {
+    } else if (room && !gameState && !isSinglePlayer && currentScreen() !== 'room') {
       setCurrentScreen('room');
     }
   });

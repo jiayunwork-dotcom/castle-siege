@@ -9,6 +9,7 @@ interface UnitRecruitPanelProps {
   selectedUnitType: UnitType | null;
   onSelectUnitType: (type: UnitType | null) => void;
   resources: Resources | null | undefined;
+  isAIThinking?: boolean;
 }
 
 const unitNames: Record<UnitType, string> = {
@@ -65,6 +66,7 @@ function UnitRecruitPanel(props: UnitRecruitPanelProps) {
   });
 
   const instructionText = createMemo(() => {
+    if (props.isAIThinking) return '🤖 AI思考中...';
     if (!props.isMyTurn) return '等待对方行动...';
     if (!canRecruit()) {
       if (props.playerFaction === 'defender') {
