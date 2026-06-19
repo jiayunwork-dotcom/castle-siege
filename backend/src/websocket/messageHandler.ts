@@ -26,6 +26,7 @@ import {
   getAIDifficulty,
   calculatePower,
   getRoundPowerHistory,
+  addRoundPowerRecord,
 } from '../managers/roomManager';
 import { saveGameState } from '../redis/gameStore';
 
@@ -89,35 +90,42 @@ export function handleWebSocketMessage(
 }
 
 function handleCreateSinglePlayerRoom(connection: any, message: WSMessage): { roomId?: string; playerId?: string } {
-  const { playerName, playerFaction, aiDifficulty } = message.payload;
+  const { playerName, playerFaction } = message.payload;
+  const aiDifficulty = message.payload.aiDifficulty as AIDifficulty;
   const result = createSinglePlayerRoom({ playerName, playerFaction, aiDifficulty });
 
   const { room, player, gameState } = result as any;
   registerPlayerSocket(room.id, player.id, connection);
+
+  const initialPower = calculatePower(gameState);
+  const initialHistory = getRoundPowerHistory(room.id);
+
+  const DIFFICULTY_NAMES: Record<AIDifficulty, string> = { easy: '简单', normal: '普通', hard: '困难' };
 
   connection.send(JSON.stringify({
     type: 'roomCreated',
     payload: { room, playerId: player.id, player, isSinglePlayer: true },
   }));
 
-  const initialPower = calculatePower(gameState);
-  broadcastToRoom(room.id, {
+  connection.send(JSON.stringify({
+    type: 'aiDifficultyInfo',
+    payload: { difficulty: aiDifficulty, difficultyName: DIFFICULTY_NAMES[aiDifficulty] },
+  }));
+
+  connection.send(JSON.stringify({
     type: 'powerUpdate',
     payload: initialPower,
-  });
-  broadcastToRoom(room.id, {
-    type: 'roundSummary',
-    payload: { roundPowerHistory: getRoundPowerHistory(room.id) },
-  });
-  broadcastToRoom(room.id, {
-    type: 'aiDifficultyInfo',
-    payload: { difficulty: aiDifficulty },
-  });
+  }));
 
-  broadcastToRoom(room.id, {
+  connection.send(JSON.stringify({
+    type: 'roundSummary',
+    payload: { roundPowerHistory: initialHistory },
+  }));
+
+  connection.send(JSON.stringify({
     type: 'gameStarted',
     payload: { gameState, isSinglePlayer: true },
-  });
+  }));
 
   setTimeout(() => checkAndStartAITurn(room.id), 300);
 
@@ -186,11 +194,30 @@ function checkAndStartAITurn(roomId: string): void {
     payload: { thinking: true, thinkingTime },
   });
 
+  const activeRoom = getActiveRoom(roomId) as any;
+  if (activeRoom?.gameEngine) {
+    const currentState = activeRoom.gameEngine.getState();
+    const currentPower = calculatePower(currentState);
+    broadcastToRoom(roomId, {
+      type: 'powerUpdate',
+      payload: currentPower,
+    });
+  }
+
   const timeout = setTimeout(() => {
     const newState = processAITurn(roomId);
     setAIThinking(roomId, false);
 
     if (newState) {
+      const finalPower = calculatePower(newState);
+      broadcastToRoom(roomId, {
+        type: 'powerUpdate',
+        payload: finalPower,
+      });
+      broadcastToRoom(roomId, {
+        type: 'roundSummary',
+        payload: { roundPowerHistory: getRoundPowerHistory(roomId) },
+      });
       broadcastToRoom(roomId, {
         type: 'aiThinking',
         payload: { thinking: false },
@@ -524,6 +551,10 @@ function handleEndSubPhase(connection: any, message: WSMessage, roomId?: string,
     return { roomId, playerId };
   }
 
+  const prevState = engine.getState();
+  const prevTurn = prevState.turn;
+  const prevFaction = prevState.currentFaction;
+
   const state = engine.endSubPhase();
   saveGameState(roomId, state).catch(console.error);
 
@@ -531,6 +562,26 @@ function handleEndSubPhase(connection: any, message: WSMessage, roomId?: string,
     type: 'turnAdvanced',
     payload: { gameState: state },
   });
+
+  const currentPower = calculatePower(state);
+  broadcastToRoom(roomId, {
+    type: 'powerUpdate',
+    payload: currentPower,
+  });
+
+  if (state.turn !== prevTurn || state.currentFaction !== prevFaction) {
+    const recordTurn = state.currentFaction !== prevFaction ? prevTurn : prevTurn;
+    const record: any = {
+      turn: recordTurn,
+      attackerPower: currentPower.attackerPower,
+      defenderPower: currentPower.defenderPower,
+    };
+    addRoundPowerRecord(roomId, record);
+    broadcastToRoom(roomId, {
+      type: 'roundSummary',
+      payload: { roundPowerHistory: getRoundPowerHistory(roomId) },
+    });
+  }
 
   if (isSinglePlayerRoom(roomId)) {
     setTimeout(() => checkAndStartAITurn(roomId), 300);

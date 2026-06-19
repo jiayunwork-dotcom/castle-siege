@@ -1,42 +1,16 @@
-import { createSignal, createEffect, onMount, For, Show } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, For, Show } from 'solid-js';
 import { gameWS } from '../services/websocket';
 import type { AIDifficulty, AIDecisionLogEntry, RoundPowerRecord } from '../types/game';
 
 function BattleAnalysisPanel() {
-  const power = () => gameWS.powerUpdate;
-  const logs = () => gameWS.aiDecisionLogs;
-  const roundHistory = () => gameWS.roundPowerHistory;
-  const currentDifficulty = () => gameWS.aiDifficulty;
-  const difficultyMsg = () => gameWS.aiDifficultyChangeMsg;
-
   let logContainer: HTMLDivElement | undefined;
   let chartCanvas: HTMLCanvasElement | undefined;
+  let chartContainer: HTMLDivElement | undefined;
 
   const [tooltipInfo, setTooltipInfo] = createSignal<{ x: number; y: number; turn: number; attacker: number; defender: number } | null>(null);
 
-  createEffect(() => {
-    if (logContainer && logs()) {
-      logs();
-      logContainer.scrollTop = 0;
-    }
-  });
-
-  createEffect(() => {
-    const history = roundHistory();
-    if (chartCanvas && history.length > 0) {
-      drawChart(history);
-    }
-  });
-
-  onMount(() => {
-    const history = roundHistory();
-    if (chartCanvas && history.length > 0) {
-      drawChart(history);
-    }
-  });
-
   const attackerPercent = () => {
-    const p = power();
+    const p = gameWS.powerUpdate;
     if (!p || (p.attackerPower === 0 && p.defenderPower === 0)) return 50;
     const total = p.attackerPower + p.defenderPower;
     return Math.round((p.attackerPower / total) * 100);
@@ -58,17 +32,24 @@ function BattleAnalysisPanel() {
     gameWS.switchAIDifficulty(target.value as AIDifficulty);
   };
 
-  const drawChart = (history: RoundPowerRecord[]) => {
+  const drawChart = () => {
     const canvas = chartCanvas;
-    if (!canvas) return;
+    if (!canvas || !chartContainer) return;
+
+    const history = gameWS.roundPowerHistory;
+    if (!history || history.length === 0) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
+    const rect = chartContainer.getBoundingClientRect();
+    if (rect.width < 10 || rect.height < 10) return;
+
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
+    canvas.style.width = rect.width + 'px';
+    canvas.style.height = rect.height + 'px';
     ctx.scale(dpr, dpr);
 
     const w = rect.width;
@@ -203,6 +184,41 @@ function BattleAnalysisPanel() {
     setTooltipInfo(null);
   };
 
+  let resizeObserver: ResizeObserver | null = null;
+
+  onMount(() => {
+    setTimeout(drawChart, 50);
+    setTimeout(drawChart, 200);
+    setTimeout(drawChart, 500);
+
+    if (chartContainer && 'ResizeObserver' in window) {
+      resizeObserver = new ResizeObserver(() => {
+        drawChart();
+      });
+      resizeObserver.observe(chartContainer);
+    }
+  });
+
+  onCleanup(() => {
+    if (resizeObserver && chartContainer) {
+      resizeObserver.unobserve(chartContainer);
+    }
+  });
+
+  createEffect(() => {
+    gameWS.roundPowerHistory;
+    setTimeout(drawChart, 10);
+  });
+
+  createEffect(() => {
+    const logs = gameWS.aiDecisionLogs;
+    if (logContainer && logs && logs.length > 0) {
+      logContainer.scrollTop = 0;
+    }
+  });
+
+  const logs = () => gameWS.aiDecisionLogs;
+
   return (
     <div style={{
       display: 'flex',
@@ -210,6 +226,7 @@ function BattleAnalysisPanel() {
       height: '100%',
       gap: '8px',
       'font-size': '12px',
+      overflow: 'auto',
     }}>
       <div style={{
         display: 'flex',
@@ -219,10 +236,11 @@ function BattleAnalysisPanel() {
         background: 'rgba(20, 25, 40, 0.8)',
         'border-radius': '8px',
         border: '1px solid #2a3a4a',
+        'flex-shrink': 0,
       }}>
         <span style={{ color: '#a0a0c0', 'font-weight': 'bold' }}>AI难度</span>
         <select
-          value={currentDifficulty()}
+          value={gameWS.aiDifficulty}
           onChange={handleDifficultyChange}
           style={{
             padding: '4px 8px',
@@ -240,7 +258,7 @@ function BattleAnalysisPanel() {
         </select>
       </div>
 
-      <Show when={difficultyMsg()}>
+      <Show when={gameWS.aiDifficultyChangeMsg}>
         <div style={{
           padding: '6px 10px',
           background: 'rgba(78, 205, 196, 0.15)',
@@ -250,8 +268,9 @@ function BattleAnalysisPanel() {
           'text-align': 'center',
           'font-weight': 'bold',
           'font-size': '12px',
+          'flex-shrink': 0,
         }}>
-          {difficultyMsg()}
+          {gameWS.aiDifficultyChangeMsg}
         </div>
       </Show>
 
@@ -260,6 +279,7 @@ function BattleAnalysisPanel() {
         'border-radius': '8px',
         padding: '10px',
         border: '1px solid #2a3a4a',
+        'flex-shrink': 0,
       }}>
         <div style={{ color: '#a0a0c0', 'font-weight': 'bold', 'margin-bottom': '8px' }}>
           ⚔️ 战力对比
@@ -292,9 +312,9 @@ function BattleAnalysisPanel() {
           <span style={{ color: '#4ecdc4', 'font-size': '11px', 'min-width': '28px', 'text-align': 'right' }}>守方</span>
         </div>
         <div style={{ display: 'flex', 'justify-content': 'space-between', 'font-size': '11px' }}>
-          <span style={{ color: '#e94560' }}>{power()?.attackerPower?.toFixed(1) ?? '0'}</span>
+          <span style={{ color: '#e94560' }}>{gameWS.powerUpdate?.attackerPower?.toFixed(1) ?? '0'}</span>
           <span style={{ color: '#a0a0c0' }}>{attackerPercent()}% vs {100 - attackerPercent()}%</span>
-          <span style={{ color: '#4ecdc4' }}>{power()?.defenderPower?.toFixed(1) ?? '0'}</span>
+          <span style={{ color: '#4ecdc4' }}>{gameWS.powerUpdate?.defenderPower?.toFixed(1) ?? '0'}</span>
         </div>
       </div>
 
@@ -303,7 +323,7 @@ function BattleAnalysisPanel() {
         'border-radius': '8px',
         padding: '10px',
         border: '1px solid #2a3a4a',
-        flex: '0 0 auto',
+        'flex-shrink': 0,
         'max-height': '180px',
         display: 'flex',
         'flex-direction': 'column',
@@ -322,7 +342,7 @@ function BattleAnalysisPanel() {
             'padding-right': '4px',
           }}
         >
-          <Show when={logs().length === 0}>
+          <Show when={!logs() || logs().length === 0}>
             <div style={{ color: '#555', 'text-align': 'center', padding: '12px', 'font-size': '11px' }}>
               等待AI行动...
             </div>
@@ -355,9 +375,9 @@ function BattleAnalysisPanel() {
         flex: '1 1 auto',
         display: 'flex',
         'flex-direction': 'column',
-        'min-height': '140px',
+        'min-height': '160px',
       }}>
-        <div style={{ display: 'flex', 'justify-content': 'space-between', 'align-items': 'center', 'margin-bottom': '6px' }}>
+        <div style={{ display: 'flex', 'justify-content': 'space-between', 'align-items': 'center', 'margin-bottom': '6px', 'flex-shrink': 0 }}>
           <span style={{ color: '#a0a0c0', 'font-weight': 'bold' }}>📈 战局趋势</span>
           <div style={{ display: 'flex', gap: '10px', 'font-size': '10px' }}>
             <span style={{ display: 'flex', 'align-items': 'center', gap: '3px' }}>
@@ -370,7 +390,10 @@ function BattleAnalysisPanel() {
             </span>
           </div>
         </div>
-        <div style={{ flex: 1, position: 'relative' }}>
+        <div
+          ref={chartContainer}
+          style={{ flex: 1, position: 'relative', 'min-height': '120px' }}
+        >
           <canvas
             ref={chartCanvas}
             onMouseMove={handleChartMouseMove}
