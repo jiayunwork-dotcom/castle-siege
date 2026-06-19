@@ -42,6 +42,9 @@ export class SnapshotSystem {
   };
   private previousUnitIds: Set<string> = new Set();
   private destroyedDefenseIdsThisTurn: Set<string> = new Set();
+  private turnStartUnits: TurnSnapshotUnit[] = [];
+  private turnStartSiegeEngines: TurnSnapshotSiegeEngine[] = [];
+  private turnStartDefenses: TurnSnapshotDefense[] = [];
 
   constructor() {
     this.killByTypeMap.set('attacker', new Map());
@@ -72,6 +75,30 @@ export class SnapshotSystem {
     this.previousUnitIds = new Set(state.units.map(u => u.id));
     this.destroyedDefenseIdsThisTurn = new Set();
     this.turnActions = [];
+    this.turnStartUnits = state.units.map(u => ({
+      id: u.id,
+      type: u.type,
+      faction: u.faction,
+      position: { ...u.position },
+      hp: u.stats.hp,
+      maxHp: u.stats.maxHp,
+      ownerId: u.ownerId,
+    }));
+    this.turnStartSiegeEngines = state.siegeEngines.map(e => ({
+      id: e.id,
+      type: e.type,
+      faction: e.faction,
+      position: { ...e.position },
+      hp: e.stats.hp,
+      maxHp: e.stats.maxHp,
+    }));
+    this.turnStartDefenses = state.defenses.map(d => ({
+      id: d.id,
+      type: d.type,
+      position: { ...d.position },
+      hp: d.hp,
+      maxHp: d.maxHp,
+    }));
   }
 
   recordMove(actorId: string, actorType: 'unit' | 'siegeEngine', fromPosition: Position, toPosition: Position): void {
@@ -329,6 +356,9 @@ export class SnapshotSystem {
       units: snapshotUnits,
       siegeEngines: snapshotEngines,
       defenses: snapshotDefenses,
+      startUnits: [...this.turnStartUnits],
+      startSiegeEngines: [...this.turnStartSiegeEngines],
+      startDefenses: [...this.turnStartDefenses],
       resources: {
         attacker: { ...state.resources.attacker },
         defender: { ...state.resources.defender },

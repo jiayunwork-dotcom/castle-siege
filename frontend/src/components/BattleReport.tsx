@@ -99,12 +99,6 @@ function BattleReportScreen(props: BattleReportProps) {
     return snap?.actions || [];
   });
 
-  const prevSnapshot = createMemo(() => {
-    const idx = selectedTurn() - 1;
-    const snaps = turnSnapshots();
-    return idx >= 0 ? snaps[idx] : null;
-  });
-
   const attackerStats = createMemo(() => {
     const stats = report()?.playerStats.filter(s => s.faction === 'attacker') || [];
     return sortStats(stats, attackerSortField(), attackerSortDir());
@@ -142,11 +136,11 @@ function BattleReportScreen(props: BattleReportProps) {
     }
   }
 
-  function cloneSnapshotState(snap: TurnSnapshot): AnimatedState {
+  function cloneStartState(snap: TurnSnapshot): AnimatedState {
     return {
-      units: snap.units.map(u => ({ ...u, position: { ...u.position } })),
-      siegeEngines: snap.siegeEngines.map(e => ({ ...e, position: { ...e.position } })),
-      defenses: snap.defenses.map(d => ({ ...d, position: { ...d.position } })),
+      units: snap.startUnits.map(u => ({ ...u, position: { ...u.position } })),
+      siegeEngines: snap.startSiegeEngines.map(e => ({ ...e, position: { ...e.position } })),
+      defenses: snap.startDefenses.map(d => ({ ...d, position: { ...d.position } })),
       attackFlash: null,
       buildFadeIn: null,
       deathFadeOut: null,
@@ -155,37 +149,19 @@ function BattleReportScreen(props: BattleReportProps) {
   }
 
   function initAnimatedState() {
-    const prev = prevSnapshot();
     const curr = currentSnapshot();
     if (!curr) return;
 
-    const base = prev ? cloneSnapshotState(prev) : {
-      units: [],
-      siegeEngines: [],
-      defenses: [],
-      attackFlash: null,
-      buildFadeIn: null,
-      deathFadeOut: null,
-      moveProgress: null,
-    };
+    const base = cloneStartState(curr);
     setAnimState(base);
     setCurrentStep(0);
   }
 
   function applyActionUpTo(stepIndex: number) {
-    const prev = prevSnapshot();
     const curr = currentSnapshot();
     if (!curr) return;
 
-    let state: AnimatedState = prev ? cloneSnapshotState(prev) : {
-      units: [],
-      siegeEngines: [],
-      defenses: [],
-      attackFlash: null,
-      buildFadeIn: null,
-      deathFadeOut: null,
-      moveProgress: null,
-    };
+    let state: AnimatedState = cloneStartState(curr);
 
     const actions = currentActions();
     for (let i = 0; i <= stepIndex && i < actions.length; i++) {
@@ -364,24 +340,55 @@ function BattleReportScreen(props: BattleReportProps) {
     return newState;
   }
 
+  function snapToFinalState() {
+    const curr = currentSnapshot();
+    if (!curr) return;
+    setAnimState({
+      units: curr.units.map(u => ({ ...u, position: { ...u.position } })),
+      siegeEngines: curr.siegeEngines.map(e => ({ ...e, position: { ...e.position } })),
+      defenses: curr.defenses.map(d => ({ ...d, position: { ...d.position } })),
+      attackFlash: null,
+      buildFadeIn: null,
+      deathFadeOut: null,
+      moveProgress: null,
+    });
+  }
+
   function playNextStep() {
     const actions = currentActions();
-    if (currentStep() >= actions.length) {
+    const step = currentStep();
+
+    if (step >= actions.length) {
       setIsPlaying(false);
+      snapToFinalState();
       return;
     }
 
-    const action = actions[currentStep()];
+    const action = actions[step];
     setAnimState(prev => prev ? applySingleAction(prev, action, true) : prev);
-    setCurrentStep(s => s + 1);
+    setCurrentStep(step + 1);
+
+    if (step + 1 >= actions.length) {
+      setTimeout(() => {
+        setIsPlaying(false);
+        snapToFinalState();
+      }, BASE_INTERVAL / playbackSpeed() * 0.8);
+    }
   }
 
   function stepForward() {
     const actions = currentActions();
     if (currentStep() >= actions.length) return;
     stopPlayback();
-    applyActionUpTo(currentStep());
-    setCurrentStep(s => s + 1);
+    const newStep = currentStep() + 1;
+
+    if (newStep >= actions.length) {
+      snapToFinalState();
+      setCurrentStep(newStep);
+    } else {
+      applyActionUpTo(newStep - 1);
+      setCurrentStep(newStep);
+    }
   }
 
   function stepBackward() {
@@ -421,13 +428,10 @@ function BattleReportScreen(props: BattleReportProps) {
   }
 
   function toggleMode() {
-    stopPlayback();
     if (playbackMode() === 'static') {
       setPlaybackMode('animated');
-      initAnimatedState();
     } else {
       setPlaybackMode('static');
-      setAnimState(null);
     }
   }
 
@@ -476,12 +480,21 @@ function BattleReportScreen(props: BattleReportProps) {
   }
 
   createEffect(() => {
-    if (playbackMode() === 'animated') {
+    const mode = playbackMode();
+    if (mode === 'animated') {
+      stopPlayback();
       initAnimatedState();
-      if (isPlaying()) {
-        startPlayback();
-      }
+    } else {
+      stopPlayback();
+      setAnimState(null);
     }
+  });
+
+  createEffect(() => {
+    const turn = selectedTurn();
+    if (playbackMode() !== 'animated') return;
+    stopPlayback();
+    initAnimatedState();
   });
 
   createEffect(() => {

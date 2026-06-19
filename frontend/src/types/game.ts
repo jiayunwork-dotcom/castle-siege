@@ -220,6 +220,9 @@ export interface TurnSnapshot {
   units: TurnSnapshotUnit[];
   siegeEngines: TurnSnapshotSiegeEngine[];
   defenses: TurnSnapshotDefense[];
+  startUnits: TurnSnapshotUnit[];
+  startSiegeEngines: TurnSnapshotSiegeEngine[];
+  startDefenses: TurnSnapshotDefense[];
   resources: Record<Faction, Resources>;
   events: GameEvent[];
   attackerKills: number;
