@@ -11,7 +11,9 @@ export interface CombatEventCallback {
     targetUnitType: string | undefined,
     targetId: string,
     damage: number,
-    killed: boolean
+    killed: boolean,
+    actorId?: string,
+    actorType?: 'unit' | 'siegeEngine'
   ) => void;
   onDefenseDestroyed: (
     defenseType: string,
@@ -169,7 +171,9 @@ export function canAttackUnit(state: GameState, attackerId: string, targetId: st
       targetUnitType,
       targetId,
       damage,
-      killed
+      killed,
+      attacker.id,
+      'unit'
     );
 
     if (targetType === 'defense' && killed) {
@@ -290,7 +294,9 @@ export function useSiegeEngine(state: GameState, engineId: string, targetId: str
       targetUnitType,
       targetId,
       damage,
-      killed
+      killed,
+      engine.id,
+      'siegeEngine'
     );
 
     if (targetType === 'defense' && killed) {

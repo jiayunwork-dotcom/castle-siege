@@ -192,6 +192,25 @@ export interface TurnSnapshotDefense {
   maxHp: number;
 }
 
+export type ActionType = 'move' | 'attack' | 'build' | 'repair' | 'train' | 'siegeAttack';
+
+export interface TurnAction {
+  type: ActionType;
+  actorId: string;
+  actorType?: 'unit' | 'siegeEngine';
+  fromPosition?: Position;
+  toPosition?: Position;
+  targetId?: string;
+  targetType?: 'unit' | 'defense' | 'siegeEngine';
+  damage?: number;
+  killed?: boolean;
+  newBuildingType?: DefenseType | SiegeEngineType;
+  newUnitType?: UnitType;
+  repairAmount?: number;
+  newUnitId?: string;
+  newBuildingId?: string;
+}
+
 export interface TurnSnapshot {
   turn: number;
   attackerUnitCount: number;
@@ -208,6 +227,7 @@ export interface TurnSnapshot {
   attackerLosses: number;
   defenderLosses: number;
   resourceConsumption: Record<Faction, Resources>;
+  actions: TurnAction[];
 }
 
 export interface PlayerBattleStats {

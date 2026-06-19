@@ -1,4 +1,4 @@
-import { GameState, Position, MoveAction, AttackAction, BuildAction, RepairAction, BattleReport, Player } from '../types/game';
+import { GameState, Position, MoveAction, AttackAction, BuildAction, RepairAction, BattleReport, Player, Unit, DefenseStructure, SiegeEngine } from '../types/game';
 import { createInitialGameState } from './gameInitializer';
 import { canMoveUnit, canAttackUnit, useSiegeEngine, checkGameEnd, setCombatCallback } from './combatSystem';
 import { advanceTurn, processSupplyPhase } from './turnSystem';
@@ -15,8 +15,11 @@ export class GameEngine {
     this.snapshotSystem = new SnapshotSystem();
 
     setCombatCallback({
-      onCombat: (attackerOwnerId, targetOwnerId, targetFaction, targetType, targetUnitType, targetId, damage, killed) => {
+      onCombat: (attackerOwnerId, targetOwnerId, targetFaction, targetType, targetUnitType, targetId, damage, killed, actorId, actorType) => {
         this.snapshotSystem.recordCombat(attackerOwnerId, targetOwnerId, targetFaction, targetType, targetUnitType, targetId, damage, killed);
+        if (actorId) {
+          this.snapshotSystem.recordAttack(actorId, actorType || 'unit', targetId, targetType, damage, killed);
+        }
       },
       onDefenseDestroyed: (defenseType, position, attackerOwnerId) => {
         this.snapshotSystem.recordDefenseDestroyed(defenseType, position, this.state.turn, attackerOwnerId, this.players);
@@ -42,7 +45,13 @@ export class GameEngine {
     if (this.state.subPhase !== 'movement') {
       return { success: false, message: 'Not movement phase' };
     }
-    return canMoveUnit(this.state, unitId, targetPosition);
+    const unit = this.state.units.find(u => u.id === unitId);
+    const fromPos = unit ? { ...unit.position } : null;
+    const result = canMoveUnit(this.state, unitId, targetPosition);
+    if (result.success && fromPos && unit) {
+      this.snapshotSystem.recordMove(unitId, 'unit', fromPos, targetPosition);
+    }
+    return result;
   }
 
   attackUnit(attackerId: string, targetId: string, targetType: 'unit' | 'defense' | 'siegeEngine', playerFaction: string): { success: boolean; damage?: number; message?: string } {
@@ -72,18 +81,36 @@ export class GameEngine {
       return { success: false, message: 'Not build/repair phase' };
     }
 
+    let result;
     if (this.state.currentFaction === 'defender') {
-      return buildDefense(this.state, structureType as any, position, 'defender');
+      result = buildDefense(this.state, structureType as any, position, 'defender');
+      if (result.success && result.structure) {
+        const players = this.players.filter(p => p.faction === 'defender');
+        const actorId = players.length > 0 ? players[0].id : 'system';
+        this.snapshotSystem.recordBuild(actorId, position, structureType as any, result.structure.id);
+      }
     } else {
-      return buildSiegeEngine(this.state, structureType as any, position, 'system', 'attacker') as any;
+      result = buildSiegeEngine(this.state, structureType as any, position, 'system', 'attacker') as any;
+      if (result.success && result.engine) {
+        const players = this.players.filter(p => p.faction === 'attacker');
+        const actorId = players.length > 0 ? players[0].id : 'system';
+        this.snapshotSystem.recordBuild(actorId, position, structureType as any, result.engine.id);
+      }
     }
+    return result;
   }
 
   repair(structureId: string, amount: number): { success: boolean; message?: string } {
     if (this.state.subPhase !== 'buildRepair') {
       return { success: false, message: 'Not build/repair phase' };
     }
-    return repairStructure(this.state, structureId, amount, this.state.currentFaction);
+    const result = repairStructure(this.state, structureId, amount, this.state.currentFaction);
+    if (result.success) {
+      const players = this.players.filter(p => p.faction === this.state.currentFaction);
+      const actorId = players.length > 0 ? players[0].id : 'system';
+      this.snapshotSystem.recordRepair(actorId, structureId, amount);
+    }
+    return result;
   }
 
   upgradeGateFeature(gateId: string, upgradeType: 'ironBars' | 'boilingOil'): { success: boolean; message?: string } {
@@ -100,7 +127,11 @@ export class GameEngine {
     if (this.state.currentFaction === 'attacker' && this.state.subPhase !== 'movement' && this.state.subPhase !== 'buildRepair') {
       return { success: false, message: 'Attackers can only train units during movement phase' };
     }
-    return trainUnit(this.state, unitType, position, ownerId, this.state.currentFaction);
+    const result = trainUnit(this.state, unitType, position, ownerId, this.state.currentFaction);
+    if (result.success && result.unit) {
+      this.snapshotSystem.recordTrain(ownerId, position, unitType as any, result.unit.id);
+    }
+    return result;
   }
 
   endSubPhase(): GameState {

@@ -12,6 +12,10 @@ import {
   Faction,
   UnitType,
   Resources,
+  TurnAction,
+  Position,
+  DefenseType,
+  SiegeEngineType,
 } from '../types/game';
 
 interface CombatRecord {
@@ -29,6 +33,7 @@ export class SnapshotSystem {
   private turnSnapshots: TurnSnapshot[] = [];
   private turnEvents: GameEvent[] = [];
   private combatRecords: CombatRecord[] = [];
+  private turnActions: TurnAction[] = [];
   private playerStatsMap: Map<string, PlayerBattleStats> = new Map();
   private killByTypeMap: Map<string, Map<string, number>> = new Map();
   private turnResourceBefore: Record<Faction, Resources> = {
@@ -66,6 +71,75 @@ export class SnapshotSystem {
     };
     this.previousUnitIds = new Set(state.units.map(u => u.id));
     this.destroyedDefenseIdsThisTurn = new Set();
+    this.turnActions = [];
+  }
+
+  recordMove(actorId: string, actorType: 'unit' | 'siegeEngine', fromPosition: Position, toPosition: Position): void {
+    this.turnActions.push({
+      type: 'move',
+      actorId,
+      actorType,
+      fromPosition: { ...fromPosition },
+      toPosition: { ...toPosition },
+    });
+  }
+
+  recordAttack(
+    actorId: string,
+    actorType: 'unit' | 'siegeEngine',
+    targetId: string,
+    targetType: 'unit' | 'defense' | 'siegeEngine',
+    damage: number,
+    killed: boolean
+  ): void {
+    this.turnActions.push({
+      type: actorType === 'siegeEngine' ? 'siegeAttack' : 'attack',
+      actorId,
+      actorType,
+      targetId,
+      targetType,
+      damage,
+      killed,
+    });
+  }
+
+  recordBuild(
+    actorId: string,
+    position: Position,
+    newBuildingType: DefenseType | SiegeEngineType,
+    newBuildingId: string
+  ): void {
+    this.turnActions.push({
+      type: 'build',
+      actorId,
+      toPosition: { ...position },
+      newBuildingType,
+      newBuildingId,
+    });
+  }
+
+  recordRepair(actorId: string, targetId: string, repairAmount: number): void {
+    this.turnActions.push({
+      type: 'repair',
+      actorId,
+      targetId,
+      repairAmount,
+    });
+  }
+
+  recordTrain(
+    actorId: string,
+    position: Position,
+    newUnitType: UnitType,
+    newUnitId: string
+  ): void {
+    this.turnActions.push({
+      type: 'train',
+      actorId,
+      toPosition: { ...position },
+      newUnitType,
+      newUnitId,
+    });
   }
 
   recordCombat(
@@ -265,12 +339,14 @@ export class SnapshotSystem {
       attackerLosses,
       defenderLosses,
       resourceConsumption,
+      actions: [...this.turnActions],
     };
 
     this.turnSnapshots.push(snapshot);
 
     this.turnEvents = [];
     this.combatRecords = [];
+    this.turnActions = [];
     this.destroyedDefenseIdsThisTurn = new Set();
   }
 
