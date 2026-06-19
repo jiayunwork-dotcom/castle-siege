@@ -1,5 +1,5 @@
 import { createSignal, createEffect, createMemo, onMount, onCleanup, For, Show } from 'solid-js';
-import { gameWS, powerUpdate, aiDecisionLogs, roundPowerHistory, aiDifficulty, aiDifficultyChangeMsg, gameState } from '../services/websocket';
+import { gameWS } from '../services/websocket';
 import type { AIDifficulty, AIDecisionLogEntry, RoundPowerRecord, PowerUpdate } from '../types/game';
 
 function computePowerFromState(state: any): PowerUpdate | null {
@@ -33,11 +33,19 @@ function BattleAnalysisPanel() {
   let chartContainer: HTMLDivElement | undefined;
 
   const [tooltipInfo, setTooltipInfo] = createSignal<{ x: number; y: number; turn: number; attacker: number; defender: number } | null>(null);
+  const [localRoundHistory, setLocalRoundHistory] = createSignal<RoundPowerRecord[]>([]);
+
+  const currentPower = createMemo<PowerUpdate | null>(() => {
+    const state = gameWS.gameState;
+    if (!state) return null;
+    return computePowerFromState(state);
+  });
 
   const effectivePower = createMemo<PowerUpdate | null>(() => {
-    const wsPower = powerUpdate();
-    if (wsPower) return wsPower;
-    return computePowerFromState(gameState());
+    const wsPower = gameWS.powerUpdate;
+    const statePower = currentPower();
+    if (wsPower && wsPower.attackerPower > 0 && wsPower.defenderPower > 0) return wsPower;
+    return statePower;
   });
 
   const attackerPercent = () => {
@@ -46,6 +54,33 @@ function BattleAnalysisPanel() {
     const total = p.attackerPower + p.defenderPower;
     return Math.round((p.attackerPower / total) * 100);
   };
+
+  createEffect(() => {
+    const state = gameWS.gameState;
+    if (!state || state.turn == null) return;
+
+    const power = computePowerFromState(state);
+    if (!power) return;
+
+    const history = localRoundHistory();
+    const lastRecord = history[history.length - 1];
+
+    if (!lastRecord || lastRecord.turn !== state.turn) {
+      const newRecord: RoundPowerRecord = {
+        turn: state.turn,
+        attackerPower: power.attackerPower,
+        defenderPower: power.defenderPower,
+      };
+      setLocalRoundHistory([...history, newRecord]);
+    }
+  });
+
+  const mergedHistory = createMemo<RoundPowerRecord[]>(() => {
+    const wsHistory = gameWS.roundPowerHistory;
+    const local = localRoundHistory();
+    if (wsHistory && wsHistory.length > 0) return wsHistory;
+    return local;
+  });
 
   const formatTime = (ts: number) => {
     const d = new Date(ts);
@@ -67,7 +102,7 @@ function BattleAnalysisPanel() {
     const canvas = chartCanvas;
     if (!canvas || !chartContainer) return;
 
-    const history = roundPowerHistory();
+    const history = mergedHistory();
     if (!history || history.length === 0) return;
 
     const ctx = canvas.getContext('2d');
@@ -238,23 +273,27 @@ function BattleAnalysisPanel() {
   });
 
   createEffect(() => {
-    roundPowerHistory();
+    mergedHistory();
     setTimeout(drawChart, 10);
+    setTimeout(drawChart, 100);
   });
 
   createEffect(() => {
-    gameState();
-    setTimeout(drawChart, 10);
+    gameWS.gameState;
+    setTimeout(drawChart, 20);
+    setTimeout(drawChart, 200);
   });
 
   createEffect(() => {
-    const logs = aiDecisionLogs();
+    const logs = gameWS.aiDecisionLogs;
     if (logContainer && logs && logs.length > 0) {
       logContainer.scrollTop = 0;
     }
   });
 
-  const logs = () => aiDecisionLogs();
+  const logs = () => gameWS.aiDecisionLogs;
+  const aiDiff = () => gameWS.aiDifficulty;
+  const aiDiffMsg = () => gameWS.aiDifficultyChangeMsg;
 
   return (
     <div style={{
@@ -277,7 +316,7 @@ function BattleAnalysisPanel() {
       }}>
         <span style={{ color: '#a0a0c0', 'font-weight': 'bold' }}>AI难度</span>
         <select
-          value={aiDifficulty()}
+          value={aiDiff()}
           onChange={handleDifficultyChange}
           style={{
             padding: '4px 8px',
@@ -295,7 +334,7 @@ function BattleAnalysisPanel() {
         </select>
       </div>
 
-      <Show when={aiDifficultyChangeMsg()}>
+      <Show when={aiDiffMsg()}>
         <div style={{
           padding: '6px 10px',
           background: 'rgba(78, 205, 196, 0.15)',
@@ -307,7 +346,7 @@ function BattleAnalysisPanel() {
           'font-size': '12px',
           'flex-shrink': 0,
         }}>
-          {aiDifficultyChangeMsg()}
+          {aiDiffMsg()}
         </div>
       </Show>
 

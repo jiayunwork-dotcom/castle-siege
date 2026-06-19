@@ -377,6 +377,15 @@ export function processAITurn(roomId: string): GameState | null {
   let iterationCount = 0;
   const MAX_ITERATIONS = 20;
 
+  const hostPlayerId = activeRoom.room.hostId;
+
+  const sendDual = (message: any) => {
+    broadcastToRoom(roomId, message);
+    if (hostPlayerId) {
+      sendToPlayer(roomId, hostPlayerId, message);
+    }
+  };
+
   const UNIT_TYPE_NAMES: Record<string, string> = {
     infantry: '步兵', archer: '弓箭手', cavalry: '骑兵', sapper: '工兵', scout: '侦察兵',
   };
@@ -419,7 +428,7 @@ export function processAITurn(roomId: string): GameState | null {
       subPhase: subPhase as any,
       description,
     };
-    broadcastToRoom(roomId, {
+    sendDual({
       type: 'aiDecisionLog',
       payload: logEntry,
     });
@@ -428,7 +437,7 @@ export function processAITurn(roomId: string): GameState | null {
   const broadcastPowerUpdate = () => {
     const currentState = activeRoom.gameEngine!.getState();
     const power = calculatePower(currentState);
-    broadcastToRoom(roomId, {
+    sendDual({
       type: 'powerUpdate',
       payload: power,
     });
@@ -540,7 +549,7 @@ export function processAITurn(roomId: string): GameState | null {
                 defenderPower: power.defenderPower,
               };
               addRoundPowerRecord(roomId, record);
-              broadcastToRoom(roomId, {
+              sendDual({
                 type: 'roundSummary',
                 payload: {
                   roundPowerHistory: getRoundPowerHistory(roomId),

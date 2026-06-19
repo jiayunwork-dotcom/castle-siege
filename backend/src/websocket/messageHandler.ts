@@ -187,18 +187,26 @@ function checkAndStartAITurn(roomId: string): void {
   if (isAIThinking(roomId)) return;
 
   const thinkingTime = getAIThinkingTimeForRoom(roomId);
+  const activeRoom = getActiveRoom(roomId) as any;
+  const hostPlayerId = activeRoom?.room?.hostId;
+
+  const sendDual = (message: any) => {
+    broadcastToRoom(roomId, message);
+    if (hostPlayerId) {
+      sendToPlayer(roomId, hostPlayerId, message);
+    }
+  };
 
   setAIThinking(roomId, true);
-  broadcastToRoom(roomId, {
+  sendDual({
     type: 'aiThinking',
     payload: { thinking: true, thinkingTime },
   });
 
-  const activeRoom = getActiveRoom(roomId) as any;
   if (activeRoom?.gameEngine) {
     const currentState = activeRoom.gameEngine.getState();
     const currentPower = calculatePower(currentState);
-    broadcastToRoom(roomId, {
+    sendDual({
       type: 'powerUpdate',
       payload: currentPower,
     });
@@ -210,19 +218,19 @@ function checkAndStartAITurn(roomId: string): void {
 
     if (newState) {
       const finalPower = calculatePower(newState);
-      broadcastToRoom(roomId, {
+      sendDual({
         type: 'powerUpdate',
         payload: finalPower,
       });
-      broadcastToRoom(roomId, {
+      sendDual({
         type: 'roundSummary',
         payload: { roundPowerHistory: getRoundPowerHistory(roomId) },
       });
-      broadcastToRoom(roomId, {
+      sendDual({
         type: 'aiThinking',
         payload: { thinking: false },
       });
-      broadcastToRoom(roomId, {
+      sendDual({
         type: 'turnAdvanced',
         payload: { gameState: newState },
       });
